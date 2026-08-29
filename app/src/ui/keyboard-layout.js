@@ -1,9 +1,7 @@
 // Controls use physical KeyboardEvent.code positions; getLayoutMap() provides
 // the characters printed on those keys for the active layout.
-const FALLBACK_LABELS = Object.freeze({ KeyW: "W/Z", KeyA: "A/Q", KeyQ: "Q/A" });
-
 const MOVEMENT_CODES = ["KeyW", "KeyA", "KeyS", "KeyD"];
-const MOVEMENT_FALLBACK_HINT = "arrows or WASD / ZQSD";
+const MOVEMENT_FALLBACK_HINT = "arrows or WASD";
 
 function keycap(value) {
   if (typeof value !== "string") return null;
@@ -14,22 +12,27 @@ function keycap(value) {
 }
 
 export function resolveKeycaps(codes, layoutMap) {
+  const required = [...new Set([...MOVEMENT_CODES, ...codes])];
   const labels = {};
-  const fromLayout = new Set();
-  for (const code of new Set([...MOVEMENT_CODES, ...codes])) {
+  let complete = true;
+  for (const code of required) {
     let label = null;
     try {
       label = keycap(layoutMap?.get?.(code));
     } catch {
       label = null;
     }
-    if (label) fromLayout.add(code);
-    labels[code] = label ?? FALLBACK_LABELS[code] ?? code.replace(/^Key/, "");
+    if (!label) complete = false;
+    labels[code] = label;
   }
-  const moveHint = MOVEMENT_CODES.every((code) => fromLayout.has(code))
-    ? `arrows or ${MOVEMENT_CODES.map((code) => labels[code]).join("")}`
-    : MOVEMENT_FALLBACK_HINT;
-  return { labels, moveHint };
+  if (!complete) {
+    for (const code of required) labels[code] = code.replace(/^Key/, "");
+    return { labels, moveHint: MOVEMENT_FALLBACK_HINT };
+  }
+  return {
+    labels,
+    moveHint: `arrows or ${MOVEMENT_CODES.map((code) => labels[code]).join("")}`,
+  };
 }
 
 export async function readLayoutMap(nav = globalThis.navigator) {

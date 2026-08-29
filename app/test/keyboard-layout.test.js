@@ -31,35 +31,39 @@ test("resolves caps and the movement hint from the active layout", () => {
   assert.equal(dvorak.moveHint, "arrows or ,AOE");
 });
 
-test("falls back to labels naming both layouts without a map", () => {
+test("falls back to QWERTY labels without a map", () => {
   assert.deepEqual(resolveKeycaps(CODES, null), {
-    labels: { KeyW: "W/Z", KeyA: "A/Q", KeyS: "S", KeyD: "D", KeyQ: "Q/A", KeyE: "E" },
-    moveHint: "arrows or WASD / ZQSD",
+    labels: { KeyW: "W", KeyA: "A", KeyS: "S", KeyD: "D", KeyQ: "Q", KeyE: "E" },
+    moveHint: "arrows or WASD",
   });
   assert.equal(resolveKeycaps(["KeyX"], null).labels.KeyX, "X");
 });
 
-test("keeps the inclusive hint when the map misses a movement key", () => {
+const ALL_QWERTY = {
+  labels: { KeyW: "W", KeyA: "A", KeyS: "S", KeyD: "D", KeyQ: "Q", KeyE: "E" },
+  moveHint: "arrows or WASD",
+};
+
+test("falls back entirely to QWERTY when the map misses a movement key", () => {
   const partial = new Map([["KeyW", "z"], ["KeyA", "q"], ["KeyS", "s"]]);
-  const { labels, moveHint } = resolveKeycaps(CODES, partial);
-  assert.equal(labels.KeyW, "Z");
-  assert.equal(labels.KeyD, "D");
-  assert.equal(moveHint, "arrows or WASD / ZQSD");
+  assert.deepEqual(resolveKeycaps(CODES, partial), ALL_QWERTY);
+});
+
+test("falls back entirely to QWERTY when the map misses a requested key", () => {
+  const partial = new Map([...AZERTY].filter(([code]) => code !== "KeyE"));
+  assert.deepEqual(resolveKeycaps(CODES, partial), ALL_QWERTY);
 });
 
 test("rejects layout values that cannot sit on a keycap", () => {
   const junk = new Map(
     Object.entries({ KeyQ: "", KeyE: "  ", KeyW: "Dead", KeyA: "́", KeyS: 7 }),
   );
-  const { labels } = resolveKeycaps(CODES, junk);
-  assert.deepEqual(labels, {
-    KeyW: "W/Z", KeyA: "A/Q", KeyS: "S", KeyD: "D", KeyQ: "Q/A", KeyE: "E",
-  });
+  assert.deepEqual(resolveKeycaps(CODES, junk), ALL_QWERTY);
 });
 
 test("a throwing map cannot break the menu", () => {
   const hostile = { get: () => { throw new Error("nope"); } };
-  assert.equal(resolveKeycaps(CODES, hostile).labels.KeyQ, "Q/A");
+  assert.deepEqual(resolveKeycaps(CODES, hostile), ALL_QWERTY);
 });
 
 test("readLayoutMap yields null when the API is absent or refuses", async () => {
