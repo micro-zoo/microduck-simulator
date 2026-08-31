@@ -1,0 +1,11 @@
+name: microduck-simulator
+
+services:
+  simulator:
+    image: microduck-simulator
+    container_name: microduck-simulator-local
+    build:
+      context: .
+      pull: true
+    ports:
+      - "127.0.0.1:18080:8080"
