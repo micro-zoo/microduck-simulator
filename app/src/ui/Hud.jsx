@@ -265,6 +265,8 @@ function PreorderButton() {
 function Quickbar() {
   const variant = useGame((s) => s.variant);
   const locoWant = useGame((s) => s.locoWant);
+  const sceneWant = useGame((s) => s.sceneWant);
+  const sceneSwitching = useGame((s) => s.sceneSwitching);
   const controlMode = useGame((s) => s.controlMode);
   const wbcLoading = useGame((s) => s.wbcLoading);
   const wbcClip = useGame((s) => s.wbcClip);
@@ -373,6 +375,28 @@ function Quickbar() {
               </Box>
             );
           })}
+        </Box>
+      </HudPlate>
+      <HudPlate caption="Scene">
+        <Box
+          component="select"
+          aria-label="Environment"
+          value={sceneWant}
+          disabled={sceneSwitching}
+          onChange={(event) => gameApi.requestScene?.(event.target.value)}
+          sx={{
+            ...hudHitSx,
+            minWidth: "9.5rem",
+            px: "0.8rem",
+            pr: "2rem",
+            background: "rgba(8, 8, 12, 0.72)",
+            color: CREAM,
+            "&:disabled": { cursor: "wait", opacity: 0.65 },
+            "& option": { color: COMIC_INK, background: CREAM },
+          }}
+        >
+          <option value="arcade">Arcade</option>
+          <option value="dining">Dining Room</option>
         </Box>
       </HudPlate>
       <HudPlate caption="Control">
@@ -490,9 +514,15 @@ function OsdLoad() {
   const rollersLoading = useGame((s) => s.rollersLoading);
   const wbcLoading = useGame((s) => s.wbcLoading);
   const wbcError = useGame((s) => s.wbcError);
-  if (!rollersLoading && !wbcLoading && !wbcError) return null;
-  const message = wbcError
+  const sceneSwitching = useGame((s) => s.sceneSwitching);
+  const sceneError = useGame((s) => s.sceneError);
+  if (!rollersLoading && !wbcLoading && !wbcError && !sceneSwitching && !sceneError) return null;
+  const error = sceneError || wbcError;
+  const message = sceneError
+    ? `SCENE ERROR · ${sceneError}`
+    : wbcError
     ? `WBC ERROR · ${wbcError}`
+    : sceneSwitching ? "LOADING SCENE"
     : wbcLoading ? "LOADING WBC" : "LOADING ROLLERS";
   return (
     <Box
@@ -504,14 +534,14 @@ function OsdLoad() {
         fontFamily: MONO,
         fontSize: "0.68rem",
         letterSpacing: "0.14em",
-        color: wbcError ? "#ff6b6b" : ORANGE,
+        color: error ? "#ff6b6b" : ORANGE,
         textShadow: "0 0 8px rgba(255, 122, 47, 0.4)",
         maxWidth: "min(34rem, calc(100vw - 3rem))",
         textAlign: "right",
       }}
     >
       {message}
-      {!wbcError ? (
+      {!error ? (
         <Box
           component="span"
           sx={{ display: "inline-block", ml: "0.15em", animation: `${recBlink} 0.8s steps(1) infinite` }}
@@ -519,6 +549,29 @@ function OsdLoad() {
           {"\u2588"}
         </Box>
       ) : null}
+    </Box>
+  );
+}
+
+function SceneCredit() {
+  const scene = useGame((s) => s.scene);
+  if (scene !== "dining") return null;
+  return (
+    <Box
+      sx={{
+        position: "fixed",
+        left: "1.5rem",
+        bottom: "5.55rem",
+        zIndex: 10,
+        fontFamily: MONO,
+        fontSize: "0.56rem",
+        letterSpacing: "0.08em",
+        color: "rgba(250, 248, 242, 0.58)",
+        "& a": { color: "inherit" },
+      }}
+    >
+      ROOM: <a href="https://sketchfab.com/ida61xq" target="_blank" rel="noreferrer">CHRISTYHSU</a>
+      {" · "}<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
     </Box>
   );
 }
@@ -535,6 +588,7 @@ export default function Hud() {
       {!touchMode && (
         <>
           <Quickbar />
+          <SceneCredit />
           <Telemetry />
           <OsdLoad />
         </>

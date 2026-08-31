@@ -28,6 +28,10 @@ export const useGame = create(
     locoWant: "legs", // what the quickbar asked for (game reconciles)
     locoSwitching: false,
     rollersLoading: false, // OSD line while the roller stack streams in
+    scene: "arcade", // environment currently active in physics + rendering
+    sceneWant: "arcade", // quickbar selection while a room asset is loading
+    sceneSwitching: false,
+    sceneError: null,
     controlMode: "skills", // "skills" | "wbc"
     wbcLoading: false,
     wbcError: null,

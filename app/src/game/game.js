@@ -36,6 +36,9 @@ import {
 } from "./constants.js";
 import { loadProps, propColliders } from "./props.js";
 import {
+  DEFAULT_SCENE, SCENES, SCENE_IDS, diningRoomColliders, loadDiningRoom,
+} from "./scenes.js";
+import {
   buildRig, cloneRig, loadKinematics, setJoint, setJawOpen, MODEL_DIR, MESH_VERSION,
   loadGlbGeometries, geometryToBinaryStl,
 } from "./duck.js";
@@ -175,29 +178,45 @@ async function boot({ scene, camera, renderer }) {
     doc.querySelector("worldbody").appendChild(
       el("geom", { name: "floor", type: "plane", size: "0 0 0.05", pos: "0 0 0" }),
     );
-    // Arena walls: four static boxes (no joints, so no qpos/keyframe
-    // impact); default contype/conaffinity collides with ball and duck.
-    const ht = 0.05 / 2, hh = 0.25 / 2;
-    const off = ARENA_HALF + ht, span = ARENA_HALF + 0.05;
-    const walls = [
-      { name: "wall_px", pos: `${off} 0 ${hh}`, size: `${ht} ${span} ${hh}` },
-      { name: "wall_nx", pos: `${-off} 0 ${hh}`, size: `${ht} ${span} ${hh}` },
-      { name: "wall_py", pos: `0 ${off} ${hh}`, size: `${span} ${ht} ${hh}` },
-      { name: "wall_ny", pos: `0 ${-off} ${hh}`, size: `${span} ${ht} ${hh}` },
-    ];
-    for (const w of walls) {
-      doc.querySelector("worldbody").appendChild(
-        el("geom", { name: w.name, type: "box", pos: w.pos, size: w.size }),
-      );
+    const worldbody = doc.querySelector("worldbody");
+    const appendSceneBox = (sceneId, collider) => {
+      const active = sceneId === DEFAULT_SCENE;
+      const attrs = {
+        name: collider.name,
+        type: collider.type ?? "box",
+        pos: Array.isArray(collider.pos) ? collider.pos.join(" ") : collider.pos,
+        size: Array.isArray(collider.size) ? collider.size.join(" ") : collider.size,
+        contype: active ? "1" : "0",
+        conaffinity: active ? "1" : "0",
+      };
+      if (collider.euler) {
+        attrs.euler = Array.isArray(collider.euler) ? collider.euler.join(" ") : collider.euler;
+      }
+      worldbody.appendChild(el("geom", attrs));
+    };
+    const boundaryBoxes = (sceneId) => {
+      const half = SCENES[sceneId].arenaHalf;
+      const ht = 0.05 / 2, hh = 0.25 / 2;
+      const off = half + ht, span = half + 0.05;
+      return [
+        { name: `scene_${sceneId}_wall_px`, pos: `${off} 0 ${hh}`, size: `${ht} ${span} ${hh}` },
+        { name: `scene_${sceneId}_wall_nx`, pos: `${-off} 0 ${hh}`, size: `${ht} ${span} ${hh}` },
+        { name: `scene_${sceneId}_wall_py`, pos: `0 ${off} ${hh}`, size: `${span} ${ht} ${hh}` },
+        { name: `scene_${sceneId}_wall_ny`, pos: `0 ${-off} ${hh}`, size: `${span} ${ht} ${hh}` },
+      ];
+    };
+    for (const sceneId of SCENE_IDS) {
+      for (const wall of boundaryBoxes(sceneId)) appendSceneBox(sceneId, wall);
     }
     // Prop library colliders: one static box per enabled prop
     // (declared in props.js next to the visual placement, optionally
     // yawed via euler to match off-axis staging) so the duck and ball
     // can't clip through the dressing.
     for (const c of propColliders()) {
-      const attrs = { name: c.name, type: "box", pos: c.pos, size: c.size };
-      if (c.euler) attrs.euler = c.euler;
-      doc.querySelector("worldbody").appendChild(el("geom", attrs));
+      appendSceneBox("arcade", c);
+    }
+    for (const c of diningRoomColliders()) {
+      appendSceneBox("dining", c);
     }
     // Kickable ball: a light free sphere (beach-ball feel). MuJoCo has no
     // restitution parameter - the bounce comes from solref damping < 1, and
@@ -229,7 +248,7 @@ async function boot({ scene, camera, renderer }) {
     }));
     doc.querySelector("worldbody").appendChild(el("geom", {
       name: "terrain", type: "hfield", hfield: "terrain",
-      pos: `0 0 ${-RELIEF_SINK}`,
+      pos: `0 0 ${-RELIEF_SINK}`, contype: "1", conaffinity: "1",
     }));
     // STAND keyframe from mjlab's scene_walk.xml. qpos must cover every
     // joint in document order: the 14 actuated hinges take DEFAULT_POSE by
@@ -375,6 +394,8 @@ async function boot({ scene, camera, renderer }) {
   // addresses); legs is registered when its render rig resolves below.
   const locos = {};
   let loco = "legs"; // "legs" | "rollers"
+  let activeScene = DEFAULT_SCENE;
+  let arenaHalf = SCENES[activeScene].arenaHalf;
   const velLims = () => (loco === "rollers"
     ? [RVEL_FWD, RVEL_BACK, RVEL_ANG]
     : [VEL_FWD, VEL_BACK, VEL_ANG]);
@@ -395,6 +416,7 @@ async function boot({ scene, camera, renderer }) {
   const waypointSource = new WaypointSource({
     camera, renderer,
     getVelocityLimits: () => velLims(),
+    getArenaHalf: () => arenaHalf,
     getDuckPose: () => {
       const qpos = data.qpos;
       return [qpos[0], qpos[1], duckYaw(qpos)];
@@ -573,6 +595,9 @@ async function boot({ scene, camera, renderer }) {
     headTarget.fill(0);
     headSmooth.fill(0);
     mujoco.mj_resetDataKeyframe(model, data, standKeyId);
+    const spawn = SCENES[activeScene].spawn;
+    data.qpos[0] = spawn[0];
+    data.qpos[1] = spawn[1];
     mujoco.mj_forward(model, data);
     lastAction.fill(0);
     sitFlag = 0;
@@ -622,7 +647,7 @@ async function boot({ scene, camera, renderer }) {
     );
     const heading = yaw + (Math.random() - 0.5) * 0.7;
     const dist = 0.35 + (Math.random() - 0.5) * 0.1;
-    const lim = ARENA_HALF - BALL_RADIUS - 0.05;
+    const lim = arenaHalf - BALL_RADIUS - 0.05;
     const clamp = (v) => Math.min(lim, Math.max(-lim, v));
     qpos[ballQposAdr] = clamp(qpos[0] + Math.cos(heading) * dist);
     qpos[ballQposAdr + 1] = clamp(qpos[1] + Math.sin(heading) * dist);
@@ -854,8 +879,8 @@ async function boot({ scene, camera, renderer }) {
     if (ballActive) {
       const q = data.qpos;
       const escaped =
-        Math.abs(q[ballQposAdr]) > ARENA_HALF + 0.1 ||
-        Math.abs(q[ballQposAdr + 1]) > ARENA_HALF + 0.1;
+        Math.abs(q[ballQposAdr]) > arenaHalf + 0.1 ||
+        Math.abs(q[ballQposAdr + 1]) > arenaHalf + 0.1;
       if (escaped) spawnBall();
     }
 
@@ -999,6 +1024,31 @@ async function boot({ scene, camera, renderer }) {
     qposAdr, dofAdr, gyroAdr, trunkId, standKeyId, ballQposAdr, ballDofAdr, extraJoints,
   };
 
+  const physicsSceneGeomNames = {
+    arcade: [
+      ...["px", "nx", "py", "ny"].map((side) => `scene_arcade_wall_${side}`),
+      ...propColliders().map((collider) => collider.name),
+      "terrain",
+    ],
+    dining: [
+      ...["px", "nx", "py", "ny"].map((side) => `scene_dining_wall_${side}`),
+      ...diningRoomColliders().map((collider) => collider.name),
+    ],
+  };
+
+  function applyPhysicsScene(targetModel, sceneId) {
+    for (const [groupScene, names] of Object.entries(physicsSceneGeomNames)) {
+      const enabled = groupScene === sceneId ? 1 : 0;
+      for (const name of names) {
+        const id = mujoco.mj_name2id(targetModel, mujoco.mjtObj.mjOBJ_GEOM.value, name);
+        if (id < 0) continue;
+        targetModel.geom_contype[id] = enabled;
+        targetModel.geom_conaffinity[id] = enabled;
+      }
+    }
+  }
+  applyPhysicsScene(model, activeScene);
+
   // ── Locomotion variant switching (legs <-> rollers) ──────────────────
   // The roller stack (XML + 5 extra meshes + kinematics + 2 ONNX policies)
   // is lazy-loaded on the first switch, then kept resident.
@@ -1019,6 +1069,7 @@ async function boot({ scene, camera, renderer }) {
       sessions.crouch = sCrouch;
       const rModel = mujoco.MjModel.from_xml_string(rXml, vfs);
       const rData = new mujoco.MjData(rModel);
+      applyPhysicsScene(rModel, activeScene);
       locos.rollers = {
         model: rModel, data: rData, rig: rRig, trunkGroup: rRig.bodies.get("trunk_base"),
         ...resolveAddrs(rModel, rk),
@@ -1030,6 +1081,7 @@ async function boot({ scene, camera, renderer }) {
   function activateLoco(name) {
     const L = locos[name];
     loco = name;
+    applyPhysicsScene(L.model, activeScene);
     scene.remove(rig.placer);
     ({ model, data, rig, trunkGroup, qposAdr, dofAdr, gyroAdr, trunkId,
        standKeyId, ballQposAdr, ballDofAdr, extraJoints } = L);
@@ -1229,6 +1281,56 @@ async function boot({ scene, camera, renderer }) {
     THREE, GLTFLoader, signed, scene, camera, renderer, fx, ceremony,
   });
 
+  // ── Environment switching (arcade <-> dining room) ─────────────────
+  // Physics for both scenes is resident in every locomotion model. The
+  // 45 MB room GLB is lazy-loaded once, then switching is just visibility,
+  // collision masks and a safe respawn in the selected environment.
+  let diningRoomRoot = null;
+  let diningRoomLoading = null;
+  let sceneSwitching = false;
+
+  function ensureDiningRoom() {
+    diningRoomLoading ??= loadDiningRoom({ GLTFLoader, signed, scene })
+      .then((root) => {
+        diningRoomRoot = root;
+        return root;
+      })
+      .catch((error) => {
+        diningRoomLoading = null;
+        throw error;
+      });
+    return diningRoomLoading;
+  }
+
+  async function setScene(sceneId) {
+    if (!SCENES[sceneId] || sceneSwitching || sceneId === activeScene) return;
+    sceneSwitching = true;
+    setStore({ sceneWant: sceneId, sceneSwitching: true, sceneError: null });
+    try {
+      if (sceneId === "dining") await ensureDiningRoom();
+      activeScene = sceneId;
+      arenaHalf = SCENES[sceneId].arenaHalf;
+      applyPhysicsScene(model, sceneId);
+      const arcadeVisible = sceneId === "arcade";
+      grid.visible = arcadeVisible;
+      for (const wall of wallMeshes) wall.visible = arcadeVisible;
+      for (const groups of Object.values(propGroups)) {
+        for (const group of groups) group.visible = arcadeVisible;
+      }
+      if (diningRoomRoot) diningRoomRoot.visible = sceneId === "dining";
+      controls.maxDistance = SCENES[sceneId].cameraMaxDistance;
+      resetSim();
+      setStore({ scene: sceneId, sceneWant: sceneId });
+    } catch (error) {
+      const message = error?.message || String(error);
+      console.error("[game] scene switch failed", error);
+      setStore({ sceneWant: activeScene, sceneError: message });
+    } finally {
+      sceneSwitching = false;
+      setStore({ sceneSwitching: false });
+    }
+  }
+
   // ── Camera: orbit controls + chase cam + reset glide ─────────────────
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(SPAWN_X, 0, -SPAWN_Y); // orbit around the spawn cell
@@ -1389,7 +1491,7 @@ async function boot({ scene, camera, renderer }) {
   }
   function updateGrabTarget() {
     if (!_grabRaycaster.ray.intersectPlane(_grabPlane, _grabHit)) return;
-    const lim = ARENA_HALF - 0.05;
+    const lim = arenaHalf - 0.05;
     // three (x, y, z) -> MJCF (x, -z, y), Z-up.
     grab.target[0] = Math.min(lim, Math.max(-lim, _grabHit.x));
     grab.target[1] = Math.min(lim, Math.max(-lim, -_grabHit.z));
@@ -1983,6 +2085,7 @@ async function boot({ scene, camera, renderer }) {
       setStore({ locoWant: name });
       reconcileLoco();
     },
+    requestScene: (sceneId) => { void setScene(sceneId); },
     requestControlMode: (name) => { void setControlMode(name); },
     requestWbcClip: (id) => { void setWbcClip(id); },
     resetSim,
@@ -2005,6 +2108,9 @@ async function boot({ scene, camera, renderer }) {
     get loco() { return loco; },
     get locoSwitching() { return locoSwitching; },
     toggleLoco, setLoco, ensureRollers,
+    get scene() { return activeScene; },
+    get sceneSwitching() { return sceneSwitching; },
+    setScene, ensureDiningRoom,
     get controlMode() { return controlMode; },
     get wbcBundle() { return wbcBundle; },
     get wbcClip() { return wbcClip; },

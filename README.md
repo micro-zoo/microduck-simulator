@@ -24,6 +24,12 @@ then choose one of four deployment-compatible CSV references. The browser runs t
 policy closed-loop at 50 Hz; this is not prerecorded pose playback. The WBC
 policy, motion index and selected reference stream are lazy-loaded on first use.
 
+The HUD can also switch between the compact **Arcade** and a full-size
+**Dining Room**. The room asset is loaded only on first use; both scene
+collision sets are already resident, so later switches are immediate. Scene
+switching preserves the selected Skills/WBC control stack and respawns the
+robot at a safe scene-specific start point.
+
 ## Policies
 
 | Mode | Checkpoint | What it does |
@@ -54,6 +60,7 @@ the other three use the same headerless 24-column deployment contract.
 - Space: reset
 - Drag to orbit, scroll to zoom
 - Colour dots: repaint the duck (it quacks)
+- Scene panel: switch between Arcade and Dining Room
 - Control panel: switch between operator-driven Skills and WBC motion tracking
 - WBC Motion: switching CSV starts the new motion at frame 0 without resetting
   physics or previous-action history
@@ -76,8 +83,15 @@ CSV runs once and returns to Skills after its final row, matching deployment.
   detail - handy for debugging.
 
 The ball is local-only: it lives in your tab's physics and is not shared
-with the multiplayer ghosts. A square arena (3 x 3 m) fences the play
-area so neither the ball nor the duck can wander off.
+with the multiplayer ghosts. Arcade uses a 3 x 3 m safety arena; Dining Room
+uses the 10.4 x 10.4 m boundary and furniture collision proxies from the
+referenced room setup.
+
+Dining Room uses [Dining room | Kichen baked](https://sketchfab.com/3d-models/dining-room-kichen-baked-4831c2ce6a0044d9bee9eacefcc0f2bd)
+by [ChristyHsu](https://sketchfab.com/ida61xq), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Its placement and
+collision proxies follow the read-only
+[microduck-racer reference](https://huggingface.co/spaces/Nirav-Madhani/microduck-racer).
 
 ### Gamepad
 

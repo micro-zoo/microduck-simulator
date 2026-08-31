@@ -17,8 +17,6 @@
 // back onto a stale click.
 
 import * as THREE from "three";
-import { ARENA_HALF } from "../constants.js";
-
 const WAYPOINT_ARRIVE_RADIUS = 0.12; // m, dead zone - commands zero inside it
 const WAYPOINT_TURN_GAIN = 2.2; // rad/s commanded per rad of heading error, pre-clamp
 const WAYPOINT_SMOOTH_ALPHA = 0.15; // EMA toward the steered command, per render frame
@@ -40,6 +38,7 @@ export class WaypointSource {
   #camera;
   #renderer;
   #getVelocityLimits;
+  #getArenaHalf;
   #getDuckPose; // () => [x, y, yaw] MJCF ground pose
   #isSuppressed; // () => true while a click must not arm (grabbing, locked, wrong mode)
   #getManualOverride; // () => true while another source is actively driving
@@ -52,10 +51,11 @@ export class WaypointSource {
   #onDown = null;
   #onUp = null;
 
-  constructor({ camera, renderer, getVelocityLimits, getDuckPose, isSuppressed, getManualOverride }) {
+  constructor({ camera, renderer, getVelocityLimits, getArenaHalf, getDuckPose, isSuppressed, getManualOverride }) {
     this.#camera = camera;
     this.#renderer = renderer;
     this.#getVelocityLimits = getVelocityLimits;
+    this.#getArenaHalf = getArenaHalf;
     this.#getDuckPose = getDuckPose;
     this.#isSuppressed = isSuppressed;
     this.#getManualOverride = getManualOverride;
@@ -144,7 +144,7 @@ export class WaypointSource {
     );
     this.#raycaster.setFromCamera(this.#ndc, this.#camera);
     if (!this.#raycaster.ray.intersectPlane(FLOOR_PLANE, this.#hit)) return;
-    const lim = ARENA_HALF - 0.05;
+    const lim = this.#getArenaHalf() - 0.05;
     this.#target = [
       Math.min(lim, Math.max(-lim, this.#hit.x)),
       Math.min(lim, Math.max(-lim, -this.#hit.z)), // three -> MJCF
