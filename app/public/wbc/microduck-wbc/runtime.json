@@ -11,7 +11,7 @@
   "actionMode": "reference_residual",
   "actionScale": 1.0,
   "fps": 50,
-  "defaultClip": "body_xy_roll_yaw_sweep",
+  "defaultClip": "wbc_happy",
   "jointNames": [
     "left_hip_yaw",
     "left_hip_roll",

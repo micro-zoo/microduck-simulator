@@ -20,7 +20,7 @@ hold D-pad up ~1 s on a gamepad) to switch; the roller model, meshes and
 policies are lazy-loaded on the first switch.
 
 The feet model also has a **WBC** control stack. Select `WBC` in the HUD,
-then choose one of the 35 reference motions. The browser runs the tracking
+then choose one of four deployment-compatible CSV references. The browser runs the tracking
 policy closed-loop at 50 Hz; this is not prerecorded pose playback. The WBC
 policy, motion index and selected reference stream are lazy-loaded on first use.
 
@@ -39,8 +39,10 @@ policy, motion index and selected reference stream are lazy-loaded on first use.
 Policies and MJCF model from
 [pollen-robotics/microduck](https://github.com/pollen-robotics/microduck)
 and [pollen-robotics/microduck_rl](https://github.com/pollen-robotics/microduck_rl).
-The WBC policy and 35-motion `teacher_train` reference library come from
-[micro-zoo/wbc-mjlab](https://github.com/micro-zoo/wbc-mjlab).
+The WBC policy and four 50 Hz references come from
+[micro-zoo/wbc-mjlab](https://github.com/micro-zoo/wbc-mjlab). The default
+`wbc_happy.csv` is byte-for-byte the file currently shipped by `microduck`;
+the other three use the same headerless 24-column deployment contract.
 
 ## Controls
 
@@ -53,7 +55,8 @@ The WBC policy and 35-motion `teacher_train` reference library come from
 - Drag to orbit, scroll to zoom
 - Colour dots: repaint the duck (it quacks)
 - Control panel: switch between operator-driven Skills and WBC motion tracking
-- WBC Motion: select the reference clip; changing clips restarts from frame 0
+- WBC Motion: switching CSV starts the new motion at frame 0 without resetting
+  physics or previous-action history
 
 In roller mode the legs-only actions (kicks, sit) are disabled and their
 hints fade out; play the ball by driving into it.
@@ -61,7 +64,8 @@ hints fade out; play the ball by driving into it.
 WBC is feet-only. Selecting WBC while rollers are active switches back to
 feet; selecting rollers while WBC is active returns to the Skills stack.
 Normal locomotion, sit, roll, kick and head-mode inputs do not alter the robot
-while the WBC tracker owns control. Reset restarts the selected motion.
+while the WBC tracker owns control. Reset restarts the selected motion. Each
+CSV runs once and returns to Skills after its final row, matching deployment.
 
 ### URL parameters
 

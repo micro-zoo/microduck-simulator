@@ -1,4 +1,5 @@
 import { signed } from "./signed.js";
+import { parseWbcReferenceCsv } from "./wbc-reference.js";
 
 const WBC_ROOT = "./wbc/microduck-wbc";
 
@@ -17,16 +18,6 @@ function sameStrings(actual, expected) {
 function sameNumbers(actual, expected, tolerance = 1e-6) {
   return actual.length === expected.length &&
     actual.every((value, i) => Math.abs(value - expected[i]) <= tolerance);
-}
-
-function decodeLittleEndianFloat32(buffer, count) {
-  if (buffer.byteLength !== count * Float32Array.BYTES_PER_ELEMENT) {
-    throw new Error(`WBC reference size mismatch: got ${buffer.byteLength} bytes, expected ${count * 4}`);
-  }
-  const view = new DataView(buffer);
-  const values = new Float32Array(count);
-  for (let i = 0; i < count; i++) values[i] = view.getFloat32(i * 4, true);
-  return values;
 }
 
 export async function loadWbcRuntime({
@@ -63,7 +54,7 @@ export async function loadWbcRuntime({
     (await fetchOk(indexUrl, "reference index")).json(),
     ort.InferenceSession.create(signed(`${WBC_ROOT}/${runtime.policy}`), sessionOptions),
   ]);
-  if (index.schema !== "wbc_reference_stream_v1" || index.robot !== "microduck") {
+  if (index.schema !== "microduck_wbc_reference_csv_v1" || index.robot !== "microduck") {
     throw new Error(`Unsupported WBC reference bundle: ${index.schema}/${index.robot}`);
   }
   if (index.commandDim !== runtime.referenceCommandSize || index.fps !== runtime.fps) {
@@ -90,10 +81,11 @@ export async function loadWbcRuntime({
     if (!pending) {
       pending = (async () => {
         const response = await fetchOk(`${WBC_ROOT}/reference/${meta.file}`, `clip ${id}`);
-        const values = decodeLittleEndianFloat32(
-          await response.arrayBuffer(),
-          meta.frames * runtime.referenceCommandSize,
-        );
+        const values = parseWbcReferenceCsv(await response.text(), {
+          frames: meta.frames,
+          width: runtime.referenceCommandSize,
+          label: `clip ${id}`,
+        });
         return { ...meta, values };
       })();
       cache.set(id, pending);

@@ -399,7 +399,7 @@ async function boot({ scene, camera, renderer }) {
       const qpos = data.qpos;
       return [qpos[0], qpos[1], duckYaw(qpos)];
     },
-    isSuppressed: () => inputLocked || headMode || mode !== "walk" || !!grab,
+    isSuppressed: () => controlMode !== "skills" || inputLocked || headMode || mode !== "walk" || !!grab,
     getManualOverride: () => padSource.isActive() || touchSource.isActive() || kbSource.isActive(),
   });
   // Keyboard, pad and touch preempt by priority; waypoint is the fallback.
@@ -551,6 +551,7 @@ async function boot({ scene, camera, renderer }) {
 
   function resetSim() {
     controlEpoch++;
+    waypointSource.cancel();
     // A live grab must not survive a reset: the per-step spring would
     // immediately yank the respawned duck toward the stale cursor target.
     endGrabHook();
@@ -750,6 +751,7 @@ async function boot({ scene, camera, renderer }) {
   }
 
   async function controlStep() {
+    let wbcFinished = false;
     driveRelief(CTRL_DT); // kinematic terrain, written before the physics steps
     // Settle phase: ctrl frozen on the pose held at the fall (approximates
     // the runtime's limp beat), physics keeps stepping, no inference.
@@ -779,7 +781,8 @@ async function boot({ scene, camera, renderer }) {
           for (let j = 0; j < NUM_JOINTS; j++) {
             ctrl[j] = runClip.values[refStart + j] + act[j] * runtime.actionScale;
           }
-          wbcFrame = (runFrame + 1) % runClip.frames;
+          if (runFrame + 1 === runClip.frames) wbcFinished = true;
+          else wbcFrame = runFrame + 1;
         }
       } else {
         const feeds = { obs: new ort.Tensor("float32", buildObs(), [1, OBS_SIZE]) };
@@ -794,6 +797,10 @@ async function boot({ scene, camera, renderer }) {
       applyGrabForce(); // mouse perturbation, fresh velocity every substep
       mujoco.mj_step(model, data);
     }
+    // Match robotd's one-pass reference clock: the final CSV row owns one
+    // complete control period, then control returns through the Skills/HOME
+    // reset path. Reference clips never wrap silently.
+    if (wbcFinished && controlMode === "wbc") await setControlMode("skills");
 
     const death = poseIsDead();
     if (death === "exploded") {
@@ -1152,16 +1159,21 @@ async function boot({ scene, camera, renderer }) {
       const bundle = await ensureWbc();
       const clip = await bundle.loadClip(id);
       if (request !== wbcRequest) return;
+      const switchingLive = controlMode === "wbc";
+      if (switchingLive) controlEpoch++;
       wbcClip = clip;
       wbcFrame = 0;
-      lastAction.fill(0);
+      // A live WBC-to-WBC switch is continuous: preserve physics state and
+      // previous-action history, invalidating only an inference still in
+      // flight. A clip chosen before WBC starts gets a clean history later
+      // when setControlMode("wbc") owns the entry transition.
+      if (!switchingLive) lastAction.fill(0);
       setStore({
         wbcLoading: false,
         wbcError: null,
         wbcClip: clip.id,
         wbcProgress: { frame: 0, frames: clip.frames },
       });
-      if (controlMode === "wbc") resetSim();
     } catch (error) {
       if (request !== wbcRequest) return;
       const message = error?.message || String(error);
@@ -1786,7 +1798,6 @@ async function boot({ scene, camera, renderer }) {
   const srcTag = (source) => (source === "gamepad" ? "pad" : "kb");
 
   controller.on("reset", () => resetSim());
-  controller.on("reset", () => waypointSource.cancel());
   controller.on("spawnBall", () => spawnBall());
   controller.on("headToggle", () => toggleHeadMode());
   controller.on("chaseToggle", () => { chaseCam = !chaseCam; });
