@@ -46,6 +46,7 @@ import { Controller } from "./controls/controller.js";
 import { KeyboardSource } from "./controls/keyboard.js";
 import { GamepadSource } from "./controls/gamepad.js";
 import { TouchSource } from "./controls/touch.js";
+import { WaypointSource } from "./controls/waypoint.js";
 import * as fx from "./fx/fx-wireframe.js";
 import { createCeremony, CAM_RESET_S } from "./ceremony.js";
 import { createBallActor } from "./ball-actor.js";
@@ -62,6 +63,16 @@ const MUJOCO_URL = "https://cdn.jsdelivr.net/npm/@mujoco/mujoco@3.11.0/mujoco.js
 const ORT_URL = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.mjs";
 
 let bootStarted = false;
+
+// Trunk yaw from the freejoint quat (MuJoCo wxyz), Z-up so this is rotation
+// about z. Shared by the chase cam and the waypoint follower - both need
+// "which way is the duck facing" in MJCF ground coords.
+function duckYaw(qpos) {
+  return Math.atan2(
+    2 * (qpos[3] * qpos[6] + qpos[4] * qpos[5]),
+    1 - 2 * (qpos[5] * qpos[5] + qpos[6] * qpos[6]),
+  );
+}
 
 // HMR teardown for the ghost session: invalidating this module (directly or
 // via an edit to ghosts.js) used to stack a live 15 Hz broadcast interval
@@ -375,8 +386,23 @@ async function boot({ scene, camera, renderer }) {
   const kbSource = new KeyboardSource({ getVelocityLimits: () => velLims() });
   const padSource = new GamepadSource({ getVelocityLimits: () => velLims() });
   const touchSource = new TouchSource({ getVelocityLimits: () => velLims() });
-  // Keyboard last: it reads zero when idle, so it doubles as the fallback.
-  const controller = new Controller({ sources: [padSource, touchSource, kbSource] });
+  // Click-to-walk (PLAN.md Project 1 Phase A): reads zero until a floor
+  // click arms a target, so - like the keyboard before it - it doubles as
+  // the fallback. Any keyboard/pad/touch input preempts it by arbitration
+  // order alone; getManualOverride also cancels the pending target outright
+  // so releasing manual input doesn't snap the duck back onto a stale click.
+  const waypointSource = new WaypointSource({
+    camera, renderer,
+    getVelocityLimits: () => velLims(),
+    getDuckPose: () => {
+      const qpos = data.qpos;
+      return [qpos[0], qpos[1], duckYaw(qpos)];
+    },
+    isSuppressed: () => inputLocked || headMode || mode !== "walk" || !!grab,
+    getManualOverride: () => padSource.isActive() || touchSource.isActive() || kbSource.isActive(),
+  });
+  // Keyboard, pad and touch preempt by priority; waypoint is the fallback.
+  const controller = new Controller({ sources: [padSource, touchSource, kbSource, waypointSource] });
   // Right-stick camera state, read by the telemetry before the camera-orbit
   // section below has evaluated.
   let padOrbitLive = false;
@@ -1067,10 +1093,7 @@ async function boot({ scene, camera, renderer }) {
     if (mode === "roll" || isKick()) {
       rawYaw = chaseHeldYaw;
     } else {
-      rawYaw = Math.atan2(
-        2 * (qpos[3] * qpos[6] + qpos[4] * qpos[5]),
-        1 - 2 * (qpos[5] * qpos[5] + qpos[6] * qpos[6]),
-      );
+      rawYaw = duckYaw(qpos);
       chaseHeldYaw = rawYaw;
     }
     // "turning" reads the raw per-source wz commands (not the locked/merged
@@ -1119,10 +1142,7 @@ async function boot({ scene, camera, renderer }) {
   const _tgtFrom = new THREE.Vector3(), _tgtTo = new THREE.Vector3();
   function startCameraReset() {
     const qpos = data.qpos;
-    const yaw = Math.atan2(
-      2 * (qpos[3] * qpos[6] + qpos[4] * qpos[5]),
-      1 - 2 * (qpos[5] * qpos[5] + qpos[6] * qpos[6]),
-    );
+    const yaw = duckYaw(qpos);
     chaseHeldYaw = yaw;
     chaseYawSmooth = yaw;
     chaseYawFollow = yaw;
@@ -1230,10 +1250,21 @@ async function boot({ scene, camera, renderer }) {
     if (now - grabHoverAt < 80) return;
     grabHoverAt = now;
     grabRayFrom(e);
-    renderer.domElement.style.cursor = grabPick() ? "grab" : "";
+    const clickable = mode === "walk" && !headMode;
+    renderer.domElement.style.cursor = grabPick() ? "grab" : (clickable ? "crosshair" : "");
   });
   window.addEventListener("pointerup", endGrab);
   window.addEventListener("pointercancel", endGrab);
+
+  // Waypoint marker: pulsing ring at the clicked floor point, hidden while
+  // idle. Positioned each frame in frame() from waypointSource.target.
+  const waypointMarker = new THREE.Mesh(
+    new THREE.RingGeometry(0.05, 0.065, 32),
+    new THREE.MeshBasicMaterial({ color: 0xff7a2f, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+  );
+  waypointMarker.rotation.x = -Math.PI / 2; // flat on the floor, three y-up
+  waypointMarker.visible = false;
+  scene.add(waypointMarker);
 
   // Pause: while the menu is up over a live game, keys belong to the menu.
   const setInputLock = (v) => { inputLocked = v; controller.setLocked(v); };
@@ -1552,6 +1583,12 @@ async function boot({ scene, camera, renderer }) {
     updateChaseCam();
     ceremony.drive();
     ball.drive(() => spawnBall({ fromQueue: true }));
+    const wpTarget = waypointSource.target;
+    waypointMarker.visible = !!wpTarget;
+    if (wpTarget) {
+      waypointMarker.position.set(wpTarget[0], 0.012, -wpTarget[1]); // MJCF -> three
+      waypointMarker.scale.setScalar(1 + 0.15 * Math.sin(performance.now() * 0.006));
+    }
     renderTelemetry();
   }
 
@@ -1564,6 +1601,7 @@ async function boot({ scene, camera, renderer }) {
   const srcTag = (source) => (source === "gamepad" ? "pad" : "kb");
 
   controller.on("reset", () => resetSim());
+  controller.on("reset", () => waypointSource.cancel());
   controller.on("spawnBall", () => spawnBall());
   controller.on("headToggle", () => toggleHeadMode());
   controller.on("chaseToggle", () => { chaseCam = !chaseCam; });
