@@ -54,6 +54,7 @@ const Kbd = styled("kbd")(({ round }) => ({
 const TILES = {
   kb: [
     { caps: "cluster-arrows", name: "Move" },
+    { codes: ["KeyX"], name: "Roll", hint: "official roulade" },
     { codes: ["KeyQ", "KeyE"], name: "Kick", hint: "left / right" },
     { codes: ["KeyR"], name: "Sit", hint: "tap again to stand" },
     { codes: ["KeyG"], name: "Pick up", hint: "beak to the ground" },
@@ -62,10 +63,12 @@ const TILES = {
   ],
   pad: [
     { caps: ["LS"], name: "Move", hint: "left stick" },
+    { caps: ["X"], name: "Roll", hint: "hold to chain" },
+    { caps: ["A"], name: "Pick up", hint: "roller: crouch" },
     { caps: ["LB", "RB"], name: "Kick", hint: "left / right" },
     { caps: ["Y"], name: "Head", hint: "sticks move the head" },
     { caps: ["RS"], name: "Camera", hint: "orbit" },
-    { caps: ["X", "\u2193"], name: "Sit", hint: "tap again to stand" },
+    { caps: ["\u2193"], name: "Sit", hint: "tap again to stand" },
   ],
   touch: [
     { caps: ["Stick"], name: "Move", hint: "left thumb" },
@@ -75,7 +78,7 @@ const TILES = {
 };
 const HINTS = {
   kb: "drag to orbit \u00b7 scroll to zoom",
-  pad: "A ground pick \u00b7 RT quack \u00b7 hold LT wheee \u00b7 R3 chase",
+  pad: "hold \u2191 mode \u00b7 hold \u2192 WBC \u00b7 RT quack \u00b7 LT wheee \u00b7 R3 chase",
   touch: "drag to orbit \u00b7 pinch to zoom",
 };
 

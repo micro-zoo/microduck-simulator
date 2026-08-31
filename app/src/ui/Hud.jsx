@@ -1,59 +1,45 @@
-// In-game HUD: Back (top-left), pre-order button (top-right, label flips
-// to "Pre-order pack" while rollers are selected - the rollers ship in the
-// accessory pack), quickbar (bottom-left: colour palette + loco switch),
-// telemetry stack (bottom-right) and the LOADING ROLLERS line while the
-// roller stack streams in.
+// In-game HUD: Back, Discord/GitHub links, scene/control quickbar, a
+// persistent input legend, telemetry and async loader status.
 //
 // Chrome reads as small comic PANELS: each group sits in a thick cream
 // keyline frame on a dark glass plate (1px ink inset between glass and
 // frame), with a caption box (cartouche) overlapping the frame's corner -
-// flat cream (orange for the shop CTA) fill, ink keyline, hard 2px offset
+// flat cream (orange for the community CTA) fill, ink keyline, hard 2px offset
 // shadow, half in / half out like a caption on a comic panel's edge. Same
 // tokens as the landing (Anton, orange, cream), zero radius everywhere.
 // Title-menu CTAs stay ComicButton.
 //
 // Whole HUD is hidden while the title/pause overlay is up; touch mode
 // strips it down to the thumbs + Back.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import { keyframes } from "@mui/material/styles";
 import { useGame, gameApi } from "../store.js";
 import { VARIANT_LABELS, VARIANT_SWATCH_HEX } from "../game/variants.js";
 import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
+import { readLayoutMap, resolveKeycaps } from "./keyboard-layout.js";
 
-// Matrix-style letter scramble: on change every glyph flips through random
-// charset entries, then locks to its target left-to-right over ~0.45 s.
-// Monospace keeps the width stable mid-scramble.
-const SCRAMBLE_GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&*<>/=+";
-function useScramble(target) {
-  const [text, setText] = useState(target.toUpperCase());
-  const timer = useRef(null);
-  const shown = useRef(target.toUpperCase());
+const HUD_CONTROL_CODES = ["KeyX", "KeyG", "KeyQ", "KeyE", "KeyR", "KeyM", "KeyC"];
+
+function useHudKeycaps(enabled) {
+  const [keycaps, setKeycaps] = useState(() => resolveKeycaps(HUD_CONTROL_CODES, null));
   useEffect(() => {
-    const t = target.toUpperCase();
-    if (shown.current === t) return;
-    shown.current = t;
-    if (timer.current) clearInterval(timer.current);
-    const n = t.length;
-    const DUR = 450; // ms until the last letter locks
-    const rnd = () => SCRAMBLE_GLYPHS[(Math.random() * SCRAMBLE_GLYPHS.length) | 0];
-    const t0 = performance.now();
-    timer.current = setInterval(() => {
-      const k = Math.floor(((performance.now() - t0) / DUR) * n);
-      if (k >= n) {
-        clearInterval(timer.current);
-        timer.current = null;
-        setText(t);
-        return;
-      }
-      let out = t.slice(0, k);
-      for (let i = k; i < n; i++) out += rnd();
-      setText(out);
-    }, 40);
-    return () => timer.current && clearInterval(timer.current);
-  }, [target]);
-  return text;
+    if (!enabled) return;
+    let cancelled = false;
+    const read = async () => {
+      const map = await readLayoutMap();
+      if (!cancelled) setKeycaps(resolveKeycaps(HUD_CONTROL_CODES, map));
+    };
+    read();
+    const keyboard = navigator.keyboard;
+    keyboard?.addEventListener?.("layoutchange", read);
+    return () => {
+      cancelled = true;
+      keyboard?.removeEventListener?.("layoutchange", read);
+    };
+  }, [enabled]);
+  return keycaps;
 }
 
 const recBlink = keyframes`
@@ -231,34 +217,52 @@ function BackButton() {
   );
 }
 
-const SHOP_URL = "https://store.pollen-robotics.com/collections/microduck";
+const COMMUNITY_LINKS = [
+  { label: "Discord", caption: "Chat", href: "https://discord.gg/7NmDZ3Xcee", accent: true },
+  { label: "GitHub", caption: "Code", href: "https://github.com/micro-zoo", accent: false },
+];
 
-function PreorderButton() {
-  const locoWant = useGame((s) => s.locoWant);
-  const text = useScramble(locoWant === "rollers" ? "Pre-order pack" : "Pre-order");
+function CommunityLinks() {
   return (
-    <HudPlate
-      caption="Shop"
-      captionSide="right"
-      captionFill="orange"
-      sx={{ position: "fixed", top: "1.25rem", right: "1.5rem", zIndex: 10 }}
+    <Box
+      sx={{
+        position: "fixed",
+        top: "1.25rem",
+        right: "1.5rem",
+        zIndex: 10,
+        display: "flex",
+        gap: "0.75rem",
+      }}
     >
-      <Box
-        component="a"
-        href={SHOP_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        sx={{
-          ...hudHitSx,
-          background: ORANGE,
-          color: COMIC_INK,
-          "&:hover": { filter: "brightness(1.07)" },
-          "&:active": { filter: "brightness(0.92)" },
-        }}
-      >
-        {text}
-      </Box>
-    </HudPlate>
+      {COMMUNITY_LINKS.map((link) => (
+        <HudPlate
+          key={link.label}
+          caption={link.caption}
+          captionSide="right"
+          captionFill={link.accent ? "orange" : "cream"}
+        >
+          <Box
+            component="a"
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{
+              ...hudHitSx,
+              background: link.accent ? ORANGE : "transparent",
+              color: link.accent ? COMIC_INK : CREAM,
+              "&:hover": {
+                color: link.accent ? COMIC_INK : ORANGE,
+                background: link.accent ? ORANGE : "rgba(255, 122, 47, 0.12)",
+                filter: "brightness(1.07)",
+              },
+              "&:active": { filter: "brightness(0.92)" },
+            }}
+          >
+            {link.label}
+          </Box>
+        </HudPlate>
+      ))}
+    </Box>
   );
 }
 
@@ -276,7 +280,7 @@ function Quickbar() {
     <Box
       sx={{
         position: "fixed",
-        bottom: "1.25rem",
+        bottom: "5.25rem",
         left: "1.5rem",
         zIndex: 10,
         display: "flex",
@@ -489,7 +493,7 @@ function Telemetry() {
     <Box
       sx={{
         position: "fixed",
-        bottom: "1.25rem",
+        bottom: "5.25rem",
         right: "1.5rem",
         zIndex: 10,
         pointerEvents: "none",
@@ -561,7 +565,7 @@ function SceneCredit() {
       sx={{
         position: "fixed",
         left: "1.5rem",
-        bottom: "5.55rem",
+        bottom: "9.55rem",
         zIndex: 10,
         fontFamily: MONO,
         fontSize: "0.56rem",
@@ -576,6 +580,87 @@ function SceneCredit() {
   );
 }
 
+const keyCapSx = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: "1.45rem",
+  height: "1.35rem",
+  px: "0.32rem",
+  boxSizing: "border-box",
+  border: `1px solid ${CREAM}`,
+  borderRadius: 0,
+  background: "#14141c",
+  color: CREAM,
+  fontFamily: MONO,
+  fontSize: "0.56rem",
+  fontWeight: 700,
+  lineHeight: 1,
+  boxShadow: `2px 2px 0 ${COMIC_INK}`,
+};
+
+function ControlHints() {
+  const padConnected = useGame((s) => s.padConnected);
+  const { labels } = useHudKeycaps(!padConnected);
+  const hints = padConnected
+    ? [
+        { caps: ["LS"], label: "Move" },
+        { caps: ["X"], label: "Roll" },
+        { caps: ["A"], label: "Pick / Crouch" },
+        { caps: ["LB", "RB"], label: "Kick" },
+        { caps: ["↓"], label: "Sit" },
+        { caps: ["↑"], label: "Mode" },
+        { caps: ["→"], label: "WBC" },
+        { caps: ["R3"], label: "Camera" },
+      ]
+    : [
+        { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Move" },
+        { caps: [labels.KeyX], label: "Roll" },
+        { caps: [labels.KeyG], label: "Pick / Crouch" },
+        { caps: [labels.KeyQ, labels.KeyE], label: "Kick" },
+        { caps: [labels.KeyR], label: "Sit" },
+        { caps: [labels.KeyM], label: "Mode" },
+        { caps: [labels.KeyC], label: "Camera" },
+        { caps: ["Space"], label: "Reset" },
+      ];
+  return (
+    <HudPlate
+      caption={padConnected ? "Gamepad" : "Controls"}
+      sx={{
+        position: "fixed",
+        left: "50%",
+        bottom: "1.05rem",
+        zIndex: 10,
+        transform: "translateX(-50%)",
+        maxWidth: "calc(100vw - 3rem)",
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+        {hints.map((hint, index) => (
+          <Box
+            key={hint.label}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.38rem",
+              px: "0.62rem",
+              borderLeft: index ? "1px solid rgba(250, 248, 242, 0.18)" : "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <Box sx={{ display: "flex", gap: "0.2rem" }}>
+              {hint.caps.map((cap) => <Box component="kbd" key={cap} sx={keyCapSx}>{cap}</Box>)}
+            </Box>
+            <Box sx={{ fontFamily: ANTON, fontSize: "0.66rem", letterSpacing: "0.07em", color: CREAM }}>
+              {hint.label}
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    </HudPlate>
+  );
+}
+
 export default function Hud() {
   const entered = useGame((s) => s.entered);
   const menuOpen = useGame((s) => s.menuOpen);
@@ -584,11 +669,12 @@ export default function Hud() {
   return (
     <>
       <BackButton />
-      <PreorderButton />
+      <CommunityLinks />
       {!touchMode && (
         <>
           <Quickbar />
           <SceneCredit />
+          <ControlHints />
           <Telemetry />
           <OsdLoad />
         </>

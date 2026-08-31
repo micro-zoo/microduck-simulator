@@ -6,10 +6,8 @@
 //   Right stick  camera orbit rate (reported raw in axes.orbitX/Y; the
 //                velocity smoothing / coasting lives downstream in the
 //                camera code). R3 toggles the chase cam.
-//   A            ground pick: one-shot pick-up-from-the-ground cycle
-//                (runtime-faithful; game gates it to walk mode)
-//   X            sit <-> stand (crouch-glide in roller mode - game decides).
-//                The pad can no longer launch a roll at all.
+//   A            ground pick (roller mode: crouch, same policy slot)
+//   X            roulade; holding X can request another roll
 //   Y            HEAD mode toggle (runtime-faithful). While the game sets
 //                `headMode`, locomotion is parked and BOTH sticks drive
 //                the head instead: left = head pitch/yaw, right = neck
@@ -18,6 +16,7 @@
 //                orbiting the camera for the duration.
 //   RB / LB      right / left kick
 //   DpadDown     sit <-> stand
+//   DpadRight    hold ~1 s to toggle the optional WBC stack
 //   DpadUp       short press = back to run; HOLD ~1 s = legs <-> rollers
 //                (like the robot's 3 s hold, shortened for the web)
 //   RT           analog jaw + quack on the rising edge, through a
@@ -42,9 +41,10 @@ const dz = (v) => (Math.abs(v) < PAD_DEADZONE ? 0 : v);
 
 // Standard-mapping button indices.
 const BTN_A = 0, BTN_X = 2, BTN_Y = 3, BTN_LB = 4, BTN_RB = 5, BTN_LT = 6, BTN_RT = 7;
-const BTN_R3 = 11, BTN_DPAD_UP = 12, BTN_DPAD_DOWN = 13;
+const BTN_R3 = 11, BTN_DPAD_UP = 12, BTN_DPAD_DOWN = 13, BTN_DPAD_RIGHT = 15;
 
 const DPAD_UP_HOLD_MS = 1000; // hold-to-switch-loco duration
+const DPAD_RIGHT_HOLD_MS = 1000; // web-shortened twin of deployment's 2 s hold
 
 export class GamepadSource {
   id = "gamepad";
@@ -57,7 +57,7 @@ export class GamepadSource {
   head = { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 }; // stick deflections
   pressed = {
     a: false, x: false, y: false, rb: false, lb: false, r3: false,
-    dpadDown: false, dpadUp: false,
+    dpadDown: false, dpadUp: false, dpadRight: false,
   };
   onAction = () => {}; // assigned by the Controller at registration
 
@@ -65,6 +65,8 @@ export class GamepadSource {
   #active = false; // owns twist authority (stick input, until EMA settles)
   #dpadUpAt = 0; // wall-clock of the current DpadUp press
   #dpadUpFired = false; // latch: one loco switch per hold
+  #dpadRightAt = 0;
+  #dpadRightFired = false;
   #rtDown = false; // RT physical Schmitt state (edge detection + gating)
   #ltDown = false; // LT physical Schmitt state (edge detection + gating)
   #ltRide = false; // wheee ride currently open (LT edge that wasn't blocked)
@@ -165,7 +167,9 @@ export class GamepadSource {
     prev.a = a;
 
     const x = !!gp.buttons[BTN_X]?.pressed;
-    if (x && !prev.x) this.onAction("sitToggle");
+    // Level-triggered like padd: the first press starts a roulade, then a
+    // held X keeps requesting it so the scheduler can chain the next one.
+    if (x) this.onAction("roll");
     prev.x = x;
 
     const y = !!gp.buttons[BTN_Y]?.pressed;
@@ -195,6 +199,17 @@ export class GamepadSource {
       this.onAction("locoToggle");
     }
     prev.dpadUp = dpadUp;
+
+    const dpadRight = !!gp.buttons[BTN_DPAD_RIGHT]?.pressed;
+    if (dpadRight && !prev.dpadRight) {
+      this.#dpadRightAt = now;
+      this.#dpadRightFired = false;
+    }
+    if (dpadRight && !this.#dpadRightFired && now - this.#dpadRightAt >= DPAD_RIGHT_HOLD_MS) {
+      this.#dpadRightFired = true;
+      this.onAction("wbcToggle");
+    }
+    prev.dpadRight = dpadRight;
 
     // Triggers. Both open the beak analogically - the duck sings the
     // wheee with its mouth, wider with the squeeze (jaw is purely visual:

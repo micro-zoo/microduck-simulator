@@ -13,13 +13,15 @@ const KEYMAP = {
 
 // One-shot keys -> controller actions. Physical Q/E (A/E on AZERTY) are the
 // explicit left / right kicks, mirroring the pad's LB / RB; F alternates.
-// R sits (crouch-glide in roller mode - the game decides, same way the
-// roll action used to). Nothing dispatches "roll" any more.
+// X launches the official roulade in either locomotion mode; R owns the
+// sit/stand slot and G owns ground-pick (roller mode: crouch), matching
+// the deployment scheduler's distinct skill slots.
 const ACTION_KEYS = {
   KeyC: "chaseToggle",
   KeyG: "groundPick",
   KeyM: "locoToggle",
   KeyR: "sitToggle",
+  KeyX: "roll",
   KeyQ: "kickL",
   KeyE: "kickR",
   KeyF: "alternateKick",

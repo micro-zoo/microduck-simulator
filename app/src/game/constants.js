@@ -22,6 +22,21 @@ export const POLICIES = {
   crouch: `${POLICY_DIR}/BEST_roller_crouch.onnx`,
 };
 
+// The complete 61D policy set resolved by microduck/robotd-params. Keep
+// this catalogue explicit so UI/docs/tests cannot quietly forget an
+// official network merely because its scheduler path is automatic.
+export const OFFICIAL_POLICY_CATALOG = Object.freeze([
+  Object.freeze({ id: "walk", label: "Walk", asset: POLICIES.walk, mode: "legs" }),
+  Object.freeze({ id: "stand", label: "Stand / Recover", asset: POLICIES.stand, mode: "legs" }),
+  Object.freeze({ id: "sitstand", label: "Sit / Stand", asset: POLICIES.sitstand, mode: "shared" }),
+  Object.freeze({ id: "groundpick", label: "Ground Pick", asset: POLICIES.groundpick, mode: "legs" }),
+  Object.freeze({ id: "kickL", label: "Kick Left", asset: POLICIES.kickL, mode: "shared" }),
+  Object.freeze({ id: "kickR", label: "Kick Right", asset: POLICIES.kickR, mode: "shared" }),
+  Object.freeze({ id: "roll", label: "Roulade", asset: POLICIES.roll, mode: "shared" }),
+  Object.freeze({ id: "drive", label: "Roller Drive", asset: POLICIES.drive, mode: "rollers" }),
+  Object.freeze({ id: "crouch", label: "Roller Crouch", asset: POLICIES.crouch, mode: "rollers" }),
+]);
+
 // From the ONNX metadata (identical for all alpha policies) and the STAND
 // keyframe in mjlab's scene_walk.xml. Order matches the actuators in
 // the MJCF.
@@ -38,7 +53,13 @@ export const DEFAULT_POSE = new Float32Array([
 export const NUM_JOINTS = 14;
 export const OBS_SIZE = 61;
 export const CMD_SIZE = 13;
-export const ACTION_SCALE = 1.0;
+// Deployment defaults from robotd-params. Scripted skills use scale 1.0;
+// the main locomotion policies use their mode-specific trained scale.
+export const WALK_ACTION_SCALE = 0.9;
+export const ROLLER_ACTION_SCALE = 0.8;
+export const SKILL_ACTION_SCALE = 1.0;
+export const ROLLER_CROUCH_ACTION_SCALE = 0.8;
+export const STANDING_THRESHOLD = 0.05;
 export const TIMESTEP = 0.005;
 export const DECIMATION = 4;
 export const CTRL_DT = TIMESTEP * DECIMATION; // 50 Hz
@@ -53,9 +74,9 @@ export const VEL_FWD = 0.25, VEL_BACK = -0.2, VEL_ANG = 1.0;
 export const RVEL_FWD = 0.6, RVEL_BACK = -0.5, RVEL_ANG = 0.3;
 // Crouch-glide one-shot: command = [cos(2pi*phase), sin(2pi*phase), 0],
 // phase advancing at 1/CROUCH_PERIOD_S per second and the cycle exiting
-// at 0.7 - exactly the runtime's ground-pick slot the policy was trained
-// against (mjlab CROUCH_PERIOD = 5.0, cycle end 0.7 => 3.5 s gesture).
-export const CROUCH_PERIOD_S = 5.0;
+// at 0.7 - robotd's resolved roller preset is 3.0 s, so the gesture owns
+// the policy for about 2.1 s.
+export const CROUCH_PERIOD_S = 3.0;
 export const CROUCH_END_PHASE = 0.7;
 // Ground-pick one-shot (legs): same phase encoding, from the runtime's
 // defaults (--ground-pick-period 4.0, cycle exiting at 0.7 => ~2.8 s

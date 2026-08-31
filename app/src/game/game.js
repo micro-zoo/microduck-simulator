@@ -27,7 +27,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { signed } from "./signed.js";
 import {
   POLICIES, JOINT_NAMES, DEFAULT_POSE, NUM_JOINTS, OBS_SIZE, CMD_SIZE,
-  ACTION_SCALE, TIMESTEP, DECIMATION, CTRL_DT,
+  WALK_ACTION_SCALE, ROLLER_ACTION_SCALE, SKILL_ACTION_SCALE,
+  ROLLER_CROUCH_ACTION_SCALE, STANDING_THRESHOLD,
+  TIMESTEP, DECIMATION, CTRL_DT,
   VEL_FWD, VEL_BACK, VEL_ANG, RVEL_FWD, RVEL_BACK, RVEL_ANG,
   CROUCH_PERIOD_S, CROUCH_END_PHASE,
   GROUND_PICK_PERIOD_S, GROUND_PICK_END_PHASE,
@@ -741,13 +743,25 @@ async function boot({ scene, camera, renderer }) {
     return wbcObs;
   }
 
-  // The ONNX session for the current mode: in the roller variant the main
-  // velocity mode runs the drive (skating) policy instead of the walker,
-  // and the fall-recovery state machine overrides everything with the
-  // get-up policy while it owns the duck.
-  const activeSession = () => {
-    if (recovery?.state === "recovering") return sessions.stand;
-    return sessions[loco === "rollers" && mode === "walk" ? "drive" : mode];
+  // Policy priority and scales mirror robotd's resolved deployment stack:
+  // scripted skill > sit/rise > stand at <= 0.05 twist > locomotion. The
+  // roller preset has no stand session, but retains sit, kicks and roulade.
+  const activePolicy = () => {
+    if (recovery?.state === "recovering") {
+      return { id: "stand", session: sessions.stand, scale: SKILL_ACTION_SCALE };
+    }
+    if (loco === "legs" && mode === "walk" && Math.hypot(cmd[0], cmd[1], cmd[2]) <= STANDING_THRESHOLD) {
+      return { id: "stand", session: sessions.stand, scale: SKILL_ACTION_SCALE };
+    }
+    if (loco === "rollers" && mode === "walk") {
+      return { id: "drive", session: sessions.drive, scale: ROLLER_ACTION_SCALE };
+    }
+    if (mode === "crouch") {
+      return { id: "crouch", session: sessions.crouch, scale: ROLLER_CROUCH_ACTION_SCALE };
+    }
+    const id = mode === "groundpick" ? "groundpick" : mode;
+    const scale = mode === "walk" ? WALK_ACTION_SCALE : SKILL_ACTION_SCALE;
+    return { id, session: sessions[mode], scale };
   };
 
   // ── Control loop (50 Hz, async because ONNX inference is async) ──────
@@ -811,11 +825,12 @@ async function boot({ scene, camera, renderer }) {
         }
       } else {
         const feeds = { obs: new ort.Tensor("float32", buildObs(), [1, OBS_SIZE]) };
-        const out = await activeSession().run(feeds);
+        const policy = activePolicy();
+        const out = await policy.session.run(feeds);
         const act = out.actions.data;
         lastAction.set(act);
         const ctrl = data.ctrl;
-        for (let j = 0; j < NUM_JOINTS; j++) ctrl[j] = DEFAULT_POSE[j] + act[j] * ACTION_SCALE;
+        for (let j = 0; j < NUM_JOINTS; j++) ctrl[j] = DEFAULT_POSE[j] + act[j] * policy.scale;
       }
     }
     for (let s = 0; s < DECIMATION; s++) {
@@ -1904,6 +1919,7 @@ async function boot({ scene, camera, renderer }) {
   controller.on("headToggle", () => toggleHeadMode());
   controller.on("chaseToggle", () => { chaseCam = !chaseCam; });
   controller.on("locoToggle", () => toggleLoco());
+  controller.on("wbcToggle", () => { void setControlMode(controlMode === "wbc" ? "skills" : "wbc"); });
   controller.on("roll", ({ source }) => triggerRoll(srcTag(source)));
   controller.on("groundPick", ({ source }) => triggerGroundPick(srcTag(source)));
   controller.on("kickL", ({ source }) => triggerKick("left", srcTag(source)));
@@ -1913,10 +1929,9 @@ async function boot({ scene, camera, renderer }) {
       kbKickFoot = kbKickFoot === "left" ? "right" : "left";
     }
   });
-  // Sit is the legs-only skill; on rollers the same button hands over to
-  // the crouch-glide, exactly as the (now unbound) roll action did.
+  // The deployment roller preset retains sitstand; crouch lives in the
+  // separate ground-pick slot instead.
   controller.on("sitToggle", ({ source } = {}) => {
-    if (loco !== "legs") return triggerCrouch(srcTag(source));
     const sitting = mode === "sitstand" && sitFlag === 1;
     setMode(sitting ? "walk" : "sit");
   });
@@ -1961,7 +1976,6 @@ async function boot({ scene, camera, renderer }) {
     if (recovery) return;
     if ((mode === "roll" && rollRun) || (isKick() && kickRun) ||
         (mode === "crouch" && crouchRun) || (mode === "groundpick" && pickRun)) return;
-    if (next === "sit" && loco === "rollers") return;
     exitHeadMode(); // posture changes exit head mode (offsets kept)
     clearModeTimers();
     rollRun = null;
@@ -2001,7 +2015,6 @@ async function boot({ scene, camera, renderer }) {
   // NOT zeroed: the runtime keeps one continuous action history across
   // policy switches, and the roll initiates more reliably mid-gait.
   function triggerRoll(source = "kb") {
-    if (loco === "rollers") return triggerCrouch(source);
     if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return;
     exitHeadMode();
     clearModeTimers();
@@ -2023,12 +2036,11 @@ async function boot({ scene, camera, renderer }) {
     stickers?.pop("roll");
   }
 
-  // One-shot ground pick (runtime A button): peck the ground and stand
-  // back up, phase-driven like the roller crouch (same cos/sin encoding in
-  // the command vel slots). Legs-only, from walk, and never during another
-  // one-shot / a stand-up hand-back / the entrance lock.
+  // Ground-pick policy slot (runtime A button): legs peck the ground;
+  // rollers run their crouch policy. Both are phase-driven and never start
+  // during another one-shot / a stand-up hand-back / the entrance lock.
   function triggerGroundPick(source = "kb") {
-    if (loco !== "legs") return;
+    if (loco === "rollers") return triggerCrouch(source);
     if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return;
     exitHeadMode();
     clearModeTimers();
@@ -2042,7 +2054,6 @@ async function boot({ scene, camera, renderer }) {
   // Returns whether the kick actually launched so the keyboard's foot
   // alternation only advances on real kicks.
   function triggerKick(foot, source = "kb") {
-    if (loco === "rollers") return false;
     if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return false;
     exitHeadMode();
     clearModeTimers();

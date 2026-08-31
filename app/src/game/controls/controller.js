@@ -70,11 +70,12 @@
 // jaw = max over sources, orbit = largest-magnitude value per axis.
 //
 // ── Actions ──────────────────────────────────────────────────────────────
-//   roll          one-shot roll (crouch-glide in roller mode; game decides)
+//   roll          one-shot roulade in either locomotion mode
 //   groundPick    one-shot ground pick cycle (pad A / keyboard G)
 //   kickL, kickR  one-shot kicks, explicit foot
 //   alternateKick one-shot kick, feet alternated by the game
 //   spawnBall     pop / respawn the kickable ball (no bound key; game/API)
+//   wbcToggle     Skills <-> WBC (pad D-pad right hold)
 //   headToggle    HEAD mode on/off (pad Y): sticks drive the head
 //   sitToggle     sit <-> stand (game gates it to legs mode)
 //   locoToggle    legs <-> rollers switch
