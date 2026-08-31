@@ -15,6 +15,7 @@ import { useGame } from "../store.js";
 import { signed } from "../game/signed.js";
 import { INK, ORANGE, MONO } from "../theme.js";
 import { ComicButton, ComicTitle, HalftoneRamp, ANTON } from "./comic.jsx";
+import { readLayoutMap, resolveKeycaps } from "./keyboard-layout.js";
 
 const rowIn = keyframes`
   from { transform: translateY(12px); opacity: 0; }
@@ -49,13 +50,14 @@ const Kbd = styled("kbd")(({ round }) => ({
   boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.82)",
 }));
 
+// Letter keycaps are resolved from physical codes for the active layout.
 const TILES = {
   kb: [
-    { caps: "cluster-arrows", name: "Move", hint: "arrows or ZQSD" },
-    { caps: ["Q", "E"], name: "Kick", hint: "left / right" },
-    { caps: ["R"], name: "Sit", hint: "tap again to stand" },
-    { caps: ["G"], name: "Pick up", hint: "beak to the ground" },
-    { caps: ["C"], name: "Camera", hint: "toggle chase" },
+    { caps: "cluster-arrows", name: "Move" },
+    { codes: ["KeyQ", "KeyE"], name: "Kick", hint: "left / right" },
+    { codes: ["KeyR"], name: "Sit", hint: "tap again to stand" },
+    { codes: ["KeyG"], name: "Pick up", hint: "beak to the ground" },
+    { codes: ["KeyC"], name: "Camera", hint: "toggle chase" },
     { caps: ["Space"], name: "Reset", hint: "fresh start" },
   ],
   pad: [
@@ -77,6 +79,33 @@ const HINTS = {
   touch: "drag to orbit \u00b7 pinch to zoom",
 };
 
+const KB_CODES = TILES.kb.flatMap((t) => t.codes ?? []);
+
+function useKeycaps(enabled) {
+  const [keycaps, setKeycaps] = useState(() => resolveKeycaps(KB_CODES, null));
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    let latest = 0;
+    const read = async () => {
+      const ticket = ++latest;
+      const map = await readLayoutMap();
+      // Overlapping reads can settle out of order; only the newest paints.
+      if (!cancelled && ticket === latest) setKeycaps(resolveKeycaps(KB_CODES, map));
+    };
+    read();
+    const keyboard = navigator.keyboard;
+    keyboard?.addEventListener?.("layoutchange", read);
+    return () => {
+      cancelled = true;
+      keyboard?.removeEventListener?.("layoutchange", read);
+    };
+  }, [enabled]);
+
+  return keycaps;
+}
+
 function closeMenu() {
   useGame.setState({ menuOpen: false });
   if (!useGame.getState().entered) useGame.setState({ entered: true });
@@ -89,6 +118,9 @@ export default function TitleMenu() {
   const touchMode = useGame((s) => s.touchMode);
   const [closing, setClosing] = useState(false);
   const prevOpen = useRef(menuOpen);
+  // A plugged-in gamepad wins over the touch tutorial.
+  const tutorialVariant = padConnected ? "pad" : touchMode ? "touch" : "kb";
+  const { labels, moveHint } = useKeycaps(tutorialVariant === "kb");
 
   // Keep the overlay mounted through the 0.35 s closing fade.
   useEffect(() => {
@@ -126,9 +158,14 @@ export default function TitleMenu() {
 
   if (!menuOpen && !closing) return null;
 
-  // A plugged-in gamepad wins over the touch tutorial.
-  const tutorialVariant = padConnected ? "pad" : touchMode ? "touch" : "kb";
-  const tiles = TILES[tutorialVariant];
+  const tiles =
+    tutorialVariant === "kb"
+      ? TILES.kb.map((t) => ({
+          ...t,
+          caps: t.codes ? t.codes.map((code) => labels[code]) : t.caps,
+          hint: t.hint ?? moveHint,
+        }))
+      : TILES[tutorialVariant];
   const ctaLabel = entered ? "Resume" : "Waddle in";
 
   return (
@@ -320,8 +357,8 @@ export default function TitleMenu() {
                   </Box>
                 ) : (
                   <Box sx={{ display: "flex", gap: "0.22rem", justifyContent: "center" }}>
-                    {t.caps.map((c) => (
-                      <Kbd key={c} round={t.round ? 1 : 0}>{c}</Kbd>
+                    {t.caps.map((c, i) => (
+                      <Kbd key={i} round={t.round ? 1 : 0}>{c}</Kbd>
                     ))}
                   </Box>
                 )}
