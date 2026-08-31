@@ -280,14 +280,19 @@ function Quickbar() {
     <Box
       sx={{
         position: "fixed",
-        bottom: "5.25rem",
-        left: "1.5rem",
+        top: "1.25rem",
+        left: "9rem",
         zIndex: 10,
         display: "flex",
         flexWrap: "wrap",
         alignItems: "flex-end",
         gap: "0.85rem",
-        maxWidth: "calc(100vw - 14.5rem)",
+        maxWidth: "calc(100vw - 25rem)",
+        "@media (max-width: 1150px)": {
+          top: "5.25rem",
+          left: "1.5rem",
+          maxWidth: "calc(100vw - 14.5rem)",
+        },
       }}
     >
       <HudPlate caption="Color">
@@ -632,7 +637,7 @@ function ControlHints() {
     : [
         { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Move" },
         { caps: [labels.KeyX], label: "Roll" },
-        { caps: [labels.KeyG], label: "Pick / Crouch" },
+        { caps: [labels.KeyG], label: "Pick" },
         { caps: [labels.KeyQ, labels.KeyE], label: "Kick" },
         { caps: [labels.KeyR], label: "Sit" },
         { caps: [labels.KeyM], label: "Mode" },
