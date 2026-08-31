@@ -15,9 +15,8 @@ export const POLICIES = {
   // Get-up policy for the automatic fall recovery (runtime --fall-detect):
   // same 61D obs layout as the other alpha policies, commands all zeroed.
   stand: `${POLICY_DIR}/BEST_alpha_stand.onnx`,
-  // Roller variant (lazy-loaded on first switch, never at boot):
-  // drive = velocity-tracking skating, crouch = one-shot crouch-glide
-  // driven by a phase encoding in the command slots (ground-pick style).
+  // Roller checkpoints. The simulator schedules drive as the sole roller
+  // skill; crouch remains catalogued for deployment-asset completeness.
   drive: `${POLICY_DIR}/BEST_roller.onnx`,
   crouch: `${POLICY_DIR}/BEST_roller_crouch.onnx`,
 };
@@ -28,13 +27,13 @@ export const POLICIES = {
 export const OFFICIAL_POLICY_CATALOG = Object.freeze([
   Object.freeze({ id: "walk", label: "Walk", asset: POLICIES.walk, mode: "legs" }),
   Object.freeze({ id: "stand", label: "Stand / Recover", asset: POLICIES.stand, mode: "legs" }),
-  Object.freeze({ id: "sitstand", label: "Sit / Stand", asset: POLICIES.sitstand, mode: "shared" }),
+  Object.freeze({ id: "sitstand", label: "Sit / Stand", asset: POLICIES.sitstand, mode: "legs" }),
   Object.freeze({ id: "groundpick", label: "Ground Pick", asset: POLICIES.groundpick, mode: "legs" }),
-  Object.freeze({ id: "kickL", label: "Kick Left", asset: POLICIES.kickL, mode: "shared" }),
-  Object.freeze({ id: "kickR", label: "Kick Right", asset: POLICIES.kickR, mode: "shared" }),
-  Object.freeze({ id: "roll", label: "Roulade", asset: POLICIES.roll, mode: "shared" }),
+  Object.freeze({ id: "kickL", label: "Kick Left", asset: POLICIES.kickL, mode: "legs" }),
+  Object.freeze({ id: "kickR", label: "Kick Right", asset: POLICIES.kickR, mode: "legs" }),
+  Object.freeze({ id: "roll", label: "Roulade", asset: POLICIES.roll, mode: "legs" }),
   Object.freeze({ id: "drive", label: "Roller Drive", asset: POLICIES.drive, mode: "rollers" }),
-  Object.freeze({ id: "crouch", label: "Roller Crouch", asset: POLICIES.crouch, mode: "rollers" }),
+  Object.freeze({ id: "crouch", label: "Roller Crouch", asset: POLICIES.crouch, mode: "not-scheduled" }),
 ]);
 
 // From the ONNX metadata (identical for all alpha policies) and the STAND
@@ -58,7 +57,6 @@ export const CMD_SIZE = 13;
 export const WALK_ACTION_SCALE = 0.9;
 export const ROLLER_ACTION_SCALE = 0.8;
 export const SKILL_ACTION_SCALE = 1.0;
-export const ROLLER_CROUCH_ACTION_SCALE = 0.8;
 export const STANDING_THRESHOLD = 0.05;
 export const TIMESTEP = 0.005;
 export const DECIMATION = 4;
@@ -72,12 +70,6 @@ export const VEL_FWD = 0.25, VEL_BACK = -0.2, VEL_ANG = 1.0;
 // with --max-angular-vel 0.3: faster commanded turns tip the robot over,
 // so the playground clamps wz the same way.
 export const RVEL_FWD = 0.6, RVEL_BACK = -0.5, RVEL_ANG = 0.3;
-// Crouch-glide one-shot: command = [cos(2pi*phase), sin(2pi*phase), 0],
-// phase advancing at 1/CROUCH_PERIOD_S per second and the cycle exiting
-// at 0.7 - robotd's resolved roller preset is 3.0 s, so the gesture owns
-// the policy for about 2.1 s.
-export const CROUCH_PERIOD_S = 3.0;
-export const CROUCH_END_PHASE = 0.7;
 // Ground-pick one-shot (legs): same phase encoding, from the runtime's
 // defaults (--ground-pick-period 4.0, cycle exiting at 0.7 => ~2.8 s
 // gesture, action scale and kP untouched at their 1.0 defaults).

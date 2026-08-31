@@ -13,9 +13,9 @@ const KEYMAP = {
 
 // One-shot keys -> controller actions. Physical Q/E (A/E on AZERTY) are the
 // explicit left / right kicks, mirroring the pad's LB / RB; F alternates.
-// X launches the official roulade in either locomotion mode; R owns the
-// sit/stand slot and G owns ground-pick (roller mode: crouch), matching
-// the deployment scheduler's distinct skill slots.
+// X launches the official roulade; R owns sit/stand and G owns ground-pick.
+// These policy-changing actions are feet-only: roller mode is one complete
+// drive skill and ignores them.
 const ACTION_KEYS = {
   KeyC: "chaseToggle",
   KeyG: "groundPick",

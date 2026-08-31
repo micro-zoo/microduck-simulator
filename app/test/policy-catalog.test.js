@@ -21,6 +21,16 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 test("ships every default 61D policy resolved by microduck deployment", async () => {
   assert.deepEqual(OFFICIAL_POLICY_CATALOG.map((policy) => policy.id), Object.keys(DEPLOYMENT_SHA256));
+  assert.deepEqual(
+    OFFICIAL_POLICY_CATALOG.filter((policy) => policy.mode === "rollers").map((policy) => policy.id),
+    ["drive"],
+    "roller mode must schedule exactly one policy",
+  );
+  assert.equal(
+    OFFICIAL_POLICY_CATALOG.find((policy) => policy.id === "crouch")?.mode,
+    "not-scheduled",
+    "the official crouch asset is inventoried but not exposed as a roller action",
+  );
   for (const policy of OFFICIAL_POLICY_CATALOG) {
     const relative = policy.asset.replace(/^\.\//, "");
     const bytes = await readFile(new URL(`../public/${relative}`, import.meta.url));

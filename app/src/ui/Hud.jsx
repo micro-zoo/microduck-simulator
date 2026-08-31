@@ -601,12 +601,28 @@ const keyCapSx = {
 
 function ControlHints() {
   const padConnected = useGame((s) => s.padConnected);
+  const loco = useGame((s) => s.loco);
   const { labels } = useHudKeycaps(!padConnected);
-  const hints = padConnected
-    ? [
+  const rollers = loco === "rollers";
+  const hints = rollers
+    ? padConnected
+      ? [
+          { caps: ["LS"], label: "Drive" },
+          { caps: ["↑"], label: "Hold: Feet" },
+          { caps: ["→"], label: "Switch WBC" },
+          { caps: ["R3"], label: "Camera" },
+        ]
+      : [
+          { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Drive" },
+          { caps: [labels.KeyM], label: "Feet" },
+          { caps: [labels.KeyC], label: "Camera" },
+          { caps: ["Space"], label: "Reset" },
+        ]
+    : padConnected
+      ? [
         { caps: ["LS"], label: "Move" },
         { caps: ["X"], label: "Roll" },
-        { caps: ["A"], label: "Pick / Crouch" },
+        { caps: ["A"], label: "Pick" },
         { caps: ["LB", "RB"], label: "Kick" },
         { caps: ["↓"], label: "Sit" },
         { caps: ["↑"], label: "Mode" },
@@ -625,7 +641,7 @@ function ControlHints() {
       ];
   return (
     <HudPlate
-      caption={padConnected ? "Gamepad" : "Controls"}
+      caption={rollers ? "Roller" : padConnected ? "Gamepad" : "Controls"}
       sx={{
         position: "fixed",
         left: "50%",

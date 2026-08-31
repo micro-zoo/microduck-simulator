@@ -6,16 +6,16 @@
 //   Right stick  camera orbit rate (reported raw in axes.orbitX/Y; the
 //                velocity smoothing / coasting lives downstream in the
 //                camera code). R3 toggles the chase cam.
-//   A            ground pick (roller mode: crouch, same policy slot)
-//   X            roulade; holding X can request another roll
+//   A            ground pick (feet only)
+//   X            roulade (feet only); holding X can request another roll
 //   Y            HEAD mode toggle (runtime-faithful). While the game sets
 //                `headMode`, locomotion is parked and BOTH sticks drive
 //                the head instead: left = head pitch/yaw, right = neck
 //                pitch/head roll (reported in `head`, deflections in
 //                [-1, 1], up/left positive). The right stick stops
 //                orbiting the camera for the duration.
-//   RB / LB      right / left kick
-//   DpadDown     sit <-> stand
+//   RB / LB      right / left kick (feet only)
+//   DpadDown     sit <-> stand (feet only)
 //   DpadRight    hold ~1 s to toggle the optional WBC stack
 //   DpadUp       short press = back to run; HOLD ~1 s = legs <-> rollers
 //                (like the robot's 3 s hold, shortened for the web)

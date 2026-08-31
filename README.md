@@ -35,19 +35,20 @@ robot at a safe scene-specific start point.
 The complete default policy set is taken from `microduck/robotd-params` and
 the simulator copies are byte-for-byte identical to the deployment assets.
 Idle legs use the standing network at the deployed 0.05 twist threshold;
-roller mode keeps sit, kicks and roulade while its ground-pick slot becomes
-the crouch policy.
+roller mode is deliberately one self-contained Drive skill. Its checkpoint
+inventory still includes Roller Crouch for completeness, but the simulator
+does not schedule another action policy while rollers are active.
 
 | Mode | Checkpoint | What it does |
 |--------|-----------|--------------|
 | Run (legs) | `BEST_alpha_walking.onnx` | Velocity-tracking locomotion (arrows / WASD to steer) |
 | Stand / recover (legs) | `BEST_alpha_stand.onnx` | Holds at idle and owns automatic fall recovery |
-| Sit / rise (shared) | `BEST_alpha_sitstand.onnx` | Sits down on its hull, stands back up |
+| Sit / rise (legs) | `BEST_alpha_sitstand.onnx` | Sits down on its hull, stands back up |
 | Ground pick (legs) | `alpha_ground_pick.onnx` | Phase-driven beak-to-ground motion |
-| Roll (shared) | `roulade.onnx` | Forward roulade; hold gamepad X to chain |
-| Kick | `ball_kick_left.onnx` / `ball_kick_right.onnx` | Blind one-shot kick (0.5 s window, zeroed commands), left or right leg |
+| Roll (legs) | `roulade.onnx` | Forward roulade; hold gamepad X to chain |
+| Kick (legs) | `ball_kick_left.onnx` / `ball_kick_right.onnx` | Blind one-shot kick (0.5 s window, zeroed commands), left or right leg |
 | Drive (rollers) | `BEST_roller.onnx` | Velocity-tracking skating on 4 passive wheels (higher top speed: 0.6 m/s) |
-| Crouch (rollers) | `BEST_roller_crouch.onnx` | Ground-pick slot: phase-driven crouch-glide over ~2.1 s |
+| Roller Crouch (bundled only) | `BEST_roller_crouch.onnx` | Official checkpoint retained in the catalogue; not scheduled in Roller mode |
 | WBC (legs) | `wbc/microduck-wbc/policy.onnx` | Tracks the selected whole-body reference with policy-predicted joint residuals |
 
 Policies and MJCF model from
@@ -62,10 +63,10 @@ the other three use the same headerless 24-column deployment contract.
 
 - Arrows or WASD (ZQSD): forward / back + turn
 - M: switch legs <-> rollers
-- X: forward roll (both locomotion modes)
-- G: ground pick (legs) / crouch-glide (rollers)
-- Q / E (A / E on AZERTY): kick left / right
-- R: sit / stand
+- X: forward roll (feet only)
+- G: ground pick (feet only)
+- Q / E (A / E on AZERTY): kick left / right (feet only)
+- R: sit / stand (feet only)
 - C: toggle the chase camera (on by default; dragging detaches it)
 - Space: reset
 - Drag to orbit, scroll to zoom
@@ -74,6 +75,9 @@ the other three use the same headerless 24-column deployment contract.
 - Control panel: switch between operator-driven Skills and WBC motion tracking
 - WBC Motion: switching CSV starts the new motion at frame 0 without resetting
   physics or previous-action history
+
+Roller mode only runs its Drive skill. Roll, ground pick, kicks, sit/stand
+and head-mode inputs are ignored until you switch back to Feet.
 
 WBC is feet-only. Selecting WBC while rollers are active switches back to
 feet; selecting rollers while WBC is active returns to the Skills stack.
@@ -107,10 +111,10 @@ Plug in a controller and the same mapping as the real robot runtime applies:
 - Left stick: forward / back + turn
 - Right stick: orbit the camera (detaches the chase cam)
 - R3 (right stick click): toggle the chase cam back on
-- X: forward roll; hold to chain another
-- A: ground pick (legs) / crouch-glide (rollers)
-- RB / LB: right / left kick
-- D-pad down: sit / stand toggle
+- X: forward roll; hold to chain another (feet only)
+- A: ground pick (feet only)
+- RB / LB: right / left kick (feet only)
+- D-pad down: sit / stand toggle (feet only)
 - D-pad up: hold ~1 s to switch legs <-> rollers (the real robot uses a 3 s hold)
 - D-pad right: hold ~1 s to toggle WBC (the real robot uses a 2 s hold)
 - Right trigger: mouth (analog) + quack

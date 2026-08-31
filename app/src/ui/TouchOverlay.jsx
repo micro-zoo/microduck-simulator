@@ -15,6 +15,7 @@ export default function TouchOverlay() {
   const touchMode = useGame((s) => s.touchMode);
   const entered = useGame((s) => s.entered);
   const menuOpen = useGame((s) => s.menuOpen);
+  const loco = useGame((s) => s.loco);
   const visible = touchMode && entered && !menuOpen;
 
   return (
@@ -76,7 +77,7 @@ export default function TouchOverlay() {
           alignItems: "center",
           gap: "0.3rem",
         },
-        "& .cap-a": { right: 0, top: 0 },
+        "& .cap-a": { right: 0, top: 0, display: loco === "rollers" ? "none" : "flex" },
         "& .cap-b": { left: 0, bottom: 0 },
         "& #touch-btns button": {
           appearance: "none",

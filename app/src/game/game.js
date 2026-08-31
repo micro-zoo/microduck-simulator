@@ -28,10 +28,9 @@ import { signed } from "./signed.js";
 import {
   POLICIES, JOINT_NAMES, DEFAULT_POSE, NUM_JOINTS, OBS_SIZE, CMD_SIZE,
   WALK_ACTION_SCALE, ROLLER_ACTION_SCALE, SKILL_ACTION_SCALE,
-  ROLLER_CROUCH_ACTION_SCALE, STANDING_THRESHOLD,
+  STANDING_THRESHOLD,
   TIMESTEP, DECIMATION, CTRL_DT,
   VEL_FWD, VEL_BACK, VEL_ANG, RVEL_FWD, RVEL_BACK, RVEL_ANG,
-  CROUCH_PERIOD_S, CROUCH_END_PHASE,
   GROUND_PICK_PERIOD_S, GROUND_PICK_END_PHASE,
   BALL_RADIUS, BALL_PARK_POS, ARENA_HALF, SPAWN_X, SPAWN_Y,
   RELIEF_BUMPS, RELIEF_HMAX, RELIEF_GRID, RELIEF_SINK, RELIEF_RATE,
@@ -438,7 +437,7 @@ async function boot({ scene, camera, renderer }) {
   let ball = null;
   let stickers = null; // comic popups, currently disabled
 
-  let mode = "walk"; // "walk" | "sitstand" | "roll" | "kickL" | "kickR" | "crouch" | "groundpick"
+  let mode = "walk"; // "walk" | "sitstand" | "roll" | "kickL" | "kickR" | "groundpick"
   let sitFlag = 0;
   const isKick = () => mode === "kickL" || mode === "kickR";
 
@@ -481,13 +480,12 @@ async function boot({ scene, camera, renderer }) {
   // sticks drive the head.
   const ZERO_CMD = new Float32Array(3);
   function effectiveCmd() {
-    if (inputLocked || headMode || mode === "roll" || mode === "crouch" ||
+    if (inputLocked || headMode || mode === "roll" ||
         mode === "groundpick" || isKick() || postKickLock > 0 || recovery)
       return ZERO_CMD;
     return controller.getCommand();
   }
   let rollRun = null;
-  let crouchRun = null;
   let pickRun = null;
   let kickRun = null;
   let KICK_STEPS = 25;
@@ -509,7 +507,7 @@ async function boot({ scene, camera, renderer }) {
   // (gz < -0.85) for a full second. If it can't get up within 6 s, fall
   // back to the old kill: resetSim + materialization. Rollers keep the
   // plain kill (the runtime declares fall-detect roller-incompatible),
-  // and so do sit/roll/kick/crouch/groundpick and the entrance lock.
+  // and so do sit/roll/kick/groundpick and the entrance lock.
   const FALL_DEBOUNCE_STEPS = 10; // 0.2 s of gz > -0.5 before triggering
   const FALL_SETTLE_STEPS = 15; // 0.3 s ctrl freeze once triggered
   const RECOVER_UPRIGHT_STEPS = 50; // 1 s of gz < -0.85 to declare recovered
@@ -583,7 +581,6 @@ async function boot({ scene, camera, renderer }) {
     clearModeTimers();
     rollRun = null;
     kickRun = null;
-    crouchRun = null;
     pickRun = null;
     postKickLock = 0;
     fallenSince = null;
@@ -685,15 +682,11 @@ async function boot({ scene, camera, renderer }) {
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = qvel[dofAdr[j]];
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = lastAction[j];
     // command: walking/drive use the twist; sitstand uses cmd[0] as the
-    // posture flag; the crouch-glide one-shot carries its phase encoding in
-    // the vel slots (ground-pick convention: [cos, sin, 0]).
+    // posture flag; ground pick carries its phase encoding in the velocity
+    // slots ([cos, sin, 0]).
     cmd.fill(0, 0, 3);
     if (mode === "sitstand") {
       cmd[0] = sitFlag;
-    } else if (mode === "crouch" && crouchRun) {
-      const a = 2 * Math.PI * crouchRun.phase;
-      cmd[0] = Math.cos(a);
-      cmd[1] = Math.sin(a);
     } else if (mode === "groundpick" && pickRun) {
       const a = 2 * Math.PI * pickRun.phase;
       cmd[0] = Math.cos(a);
@@ -743,9 +736,9 @@ async function boot({ scene, camera, renderer }) {
     return wbcObs;
   }
 
-  // Policy priority and scales mirror robotd's resolved deployment stack:
-  // scripted skill > sit/rise > stand at <= 0.05 twist > locomotion. The
-  // roller preset has no stand session, but retains sit, kicks and roulade.
+  // Policy priority and scales mirror the leg deployment stack. Rollers are
+  // intentionally one self-contained skill: drive owns every roller tick,
+  // and action inputs cannot schedule a second policy on top of it.
   const activePolicy = () => {
     if (recovery?.state === "recovering") {
       return { id: "stand", session: sessions.stand, scale: SKILL_ACTION_SCALE };
@@ -753,11 +746,8 @@ async function boot({ scene, camera, renderer }) {
     if (loco === "legs" && mode === "walk" && Math.hypot(cmd[0], cmd[1], cmd[2]) <= STANDING_THRESHOLD) {
       return { id: "stand", session: sessions.stand, scale: SKILL_ACTION_SCALE };
     }
-    if (loco === "rollers" && mode === "walk") {
+    if (loco === "rollers") {
       return { id: "drive", session: sessions.drive, scale: ROLLER_ACTION_SCALE };
-    }
-    if (mode === "crouch") {
-      return { id: "crouch", session: sessions.crouch, scale: ROLLER_CROUCH_ACTION_SCALE };
     }
     const id = mode === "groundpick" ? "groundpick" : mode;
     const scale = mode === "walk" ? WALK_ACTION_SCALE : SKILL_ACTION_SCALE;
@@ -913,19 +903,8 @@ async function boot({ scene, camera, renderer }) {
       }
     }
 
-    // Crouch-glide one-shot: advance the trained phase clock and hand back
-    // to the drive policy at the runtime's cycle end.
-    if (mode === "crouch" && crouchRun) {
-      crouchRun.phase += CTRL_DT / CROUCH_PERIOD_S;
-      if (crouchRun.phase >= CROUCH_END_PHASE) {
-        crouchRun = null;
-        mode = "walk";
-        syncButtons();
-      }
-    }
-
-    // Ground-pick one-shot: same phase-clock pattern as the crouch, ending
-    // at the runtime's cycle end (phase 0.7 of a 4 s period, ~2.8 s).
+    // Ground-pick one-shot ends at the runtime's cycle end (phase 0.7 of
+    // a 4 s period, about 2.8 s).
     if (mode === "groundpick" && pickRun) {
       pickRun.phase += CTRL_DT / GROUND_PICK_PERIOD_S;
       if (pickRun.phase >= GROUND_PICK_END_PHASE) {
@@ -1065,8 +1044,8 @@ async function boot({ scene, camera, renderer }) {
   applyPhysicsScene(model, activeScene);
 
   // ── Locomotion variant switching (legs <-> rollers) ──────────────────
-  // The roller stack (XML + 5 extra meshes + kinematics + 2 ONNX policies)
-  // is lazy-loaded on the first switch, then kept resident.
+  // The roller stack (XML + extra meshes + kinematics + its single drive
+  // policy) is lazy-loaded on the first switch, then kept resident.
   let rollersLoading = null;
   function ensureRollers() {
     rollersLoading ??= (async () => {
@@ -1074,14 +1053,12 @@ async function boot({ scene, camera, renderer }) {
         buildPhysicsXml("robot_allcollisions_rollers.xml"),
         loadKinematics(`${MODEL_DIR}/kinematics_rollers.json`),
       ]);
-      const [rRig, sDrive, sCrouch] = await Promise.all([
+      const [rRig, sDrive] = await Promise.all([
         buildRig(rk, { materialForMesh: materialHookFor(VARIANTS[currentVariant]) }),
         ort.InferenceSession.create(signed(POLICIES.drive), sessionOpts),
-        ort.InferenceSession.create(signed(POLICIES.crouch), sessionOpts),
         addMeshesToVfs(rMeshFiles),
       ]);
       sessions.drive = sDrive;
-      sessions.crouch = sCrouch;
       const rModel = mujoco.MjModel.from_xml_string(rXml, vfs);
       const rData = new mujoco.MjData(rModel);
       applyPhysicsScene(rModel, activeScene);
@@ -1116,7 +1093,7 @@ async function boot({ scene, camera, renderer }) {
       await setControlMode("skills");
     }
     if (loco === name || locoSwitching) return;
-    if (!force && (inputLocked || rollRun || kickRun || crouchRun || pickRun ||
+    if (!force && (inputLocked || rollRun || kickRun || pickRun ||
         standTimer || recovery)) return;
     locoSwitching = true;
     setStore({ locoSwitching: true });
@@ -1929,16 +1906,18 @@ async function boot({ scene, camera, renderer }) {
       kbKickFoot = kbKickFoot === "left" ? "right" : "left";
     }
   });
-  // The deployment roller preset retains sitstand; crouch lives in the
-  // separate ground-pick slot instead.
+  // Rollers are one self-contained drive skill. Policy-changing actions
+  // remain feet-only; utility controls (camera, reset, scene, colour and
+  // switching away from rollers) stay available.
   controller.on("sitToggle", ({ source } = {}) => {
+    if (loco !== "legs") return;
     const sitting = mode === "sitstand" && sitFlag === 1;
     setMode(sitting ? "walk" : "sit");
   });
-  // Pad DpadUp short press: straight back to running (ignored mid-roll /
-  // mid-crouch: those hand back to walk on their own).
+  // Pad DpadUp short press: straight back to running (ignored mid-roll;
+  // it hands back to walk on its own).
   controller.on("walk", () => {
-    if (mode !== "walk" && mode !== "roll" && mode !== "crouch") setMode("walk");
+    if (mode !== "walk" && mode !== "roll") setMode("walk");
   });
   controller.on("quack", () => quackLoud());
   controller.on("wheeeStart", () => startWheee());
@@ -1955,10 +1934,10 @@ async function boot({ scene, camera, renderer }) {
 
   function toggleHeadMode() {
     if (headMode) return exitHeadMode();
-    // Enterable from walk or sit only - never during one-shots (roll /
-    // kick / crouch), the post-kick grace, a stand-up hand-back, a fall
+    // Enterable on feet from walk or sit only - never during one-shots
+    // (roll / kick), the post-kick grace, a stand-up hand-back, a fall
     // recovery, or while the entrance/respawn lock holds the inputs.
-    if (controlMode !== "skills" || inputLocked ||
+    if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
         (mode !== "walk" && mode !== "sitstand") || postKickLock > 0 ||
         standTimer || recovery)
       return;
@@ -1967,19 +1946,19 @@ async function boot({ scene, camera, renderer }) {
     syncButtons();
   }
 
-  function setMode(next, { force = false } = {}) {
+  function setMode(next) {
     if (controlMode !== "skills") return;
-    if (!force && inputLocked) return;
+    if (loco !== "legs") return;
+    if (inputLocked) return;
     // No policy switching mid-roll or mid-kick: both end on their own and
     // return to walk - switching now would floor the duck. Same while the
     // fall-recovery state machine owns the duck.
     if (recovery) return;
     if ((mode === "roll" && rollRun) || (isKick() && kickRun) ||
-        (mode === "crouch" && crouchRun) || (mode === "groundpick" && pickRun)) return;
+        (mode === "groundpick" && pickRun)) return;
     exitHeadMode(); // posture changes exit head mode (offsets kept)
     clearModeTimers();
     rollRun = null;
-    crouchRun = null;
     pickRun = null;
     if (next !== "sit") {
       // Leaving a sit: let the sitstand policy stand the duck back up first.
@@ -2015,7 +1994,8 @@ async function boot({ scene, camera, renderer }) {
   // NOT zeroed: the runtime keeps one continuous action history across
   // policy switches, and the roll initiates more reliably mid-gait.
   function triggerRoll(source = "kb") {
-    if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return;
+    if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
+        mode !== "walk" || standTimer || recovery) return;
     exitHeadMode();
     clearModeTimers();
     mode = "roll";
@@ -2025,23 +2005,12 @@ async function boot({ scene, camera, renderer }) {
     stickers?.pop("roll");
   }
 
-  // Roller-only one-shot: crouch, glide low, stand back up (phase-driven).
-  function triggerCrouch(source = "kb") {
-    if (controlMode !== "skills" || inputLocked || mode !== "walk" || locoSwitching || recovery) return;
-    exitHeadMode();
-    clearModeTimers();
-    mode = "crouch";
-    crouchRun = { phase: 0 };
-    syncButtons();
-    stickers?.pop("roll");
-  }
-
-  // Ground-pick policy slot (runtime A button): legs peck the ground;
-  // rollers run their crouch policy. Both are phase-driven and never start
-  // during another one-shot / a stand-up hand-back / the entrance lock.
+  // Ground-pick policy slot (runtime A button): feet-only and phase-driven.
+  // It never starts during another one-shot, a stand-up hand-back or the
+  // entrance lock.
   function triggerGroundPick(source = "kb") {
-    if (loco === "rollers") return triggerCrouch(source);
-    if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return;
+    if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
+        mode !== "walk" || standTimer || recovery) return;
     exitHeadMode();
     clearModeTimers();
     mode = "groundpick";
@@ -2054,7 +2023,8 @@ async function boot({ scene, camera, renderer }) {
   // Returns whether the kick actually launched so the keyboard's foot
   // alternation only advances on real kicks.
   function triggerKick(foot, source = "kb") {
-    if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return false;
+    if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
+        mode !== "walk" || standTimer || recovery) return false;
     exitHeadMode();
     clearModeTimers();
     mode = foot === "left" ? "kickL" : "kickR";
@@ -2071,7 +2041,6 @@ async function boot({ scene, camera, renderer }) {
       controlMode === "wbc" ? "WBC"
       : recovery ? "Recovery"
       : mode === "roll" ? "Roll"
-      : mode === "crouch" ? "Crouch"
       : mode === "groundpick" ? "Pick"
       : isKick() ? "Kick"
       : headMode ? "Head"
@@ -2127,8 +2096,6 @@ async function boot({ scene, camera, renderer }) {
     get wbcClip() { return wbcClip; },
     get wbcFrame() { return wbcFrame; },
     buildWbcObs, ensureWbc, setControlMode, setWbcClip,
-    triggerCrouch,
-    get crouchPhase() { return crouchRun?.phase ?? null; },
     triggerGroundPick,
     get groundPickPhase() { return pickRun?.phase ?? null; },
     get kickSteps() { return KICK_STEPS; },
