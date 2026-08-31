@@ -281,17 +281,17 @@ function Quickbar() {
       sx={{
         position: "fixed",
         top: "1.25rem",
-        left: "9rem",
+        left: "50%",
         zIndex: 10,
         display: "flex",
         flexWrap: "wrap",
         alignItems: "flex-end",
         gap: "0.85rem",
         maxWidth: "calc(100vw - 25rem)",
+        transform: "translateX(-50%)",
         "@media (max-width: 1150px)": {
           top: "5.25rem",
-          left: "1.5rem",
-          maxWidth: "calc(100vw - 14.5rem)",
+          maxWidth: "calc(100vw - 3rem)",
         },
       }}
     >
