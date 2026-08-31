@@ -28,6 +28,12 @@ export const useGame = create(
     locoWant: "legs", // what the quickbar asked for (game reconciles)
     locoSwitching: false,
     rollersLoading: false, // OSD line while the roller stack streams in
+    controlMode: "skills", // "skills" | "wbc"
+    wbcLoading: false,
+    wbcError: null,
+    wbcClip: "",
+    wbcClips: [],
+    wbcProgress: { frame: 0, frames: 0 },
     variant: "classic",
     padConnected: false,
     touchMode: false,

@@ -1,0 +1,15 @@
+# wbc-demo policy manifest (schemaVersion 1) — edit metadata before commit
+schemaVersion: '1'
+name: MICRODUCK Wbc-Microduck
+description: Microduck 14-DoF arbitrary joint-trajectory tracking with BAM XL330 actuators.
+robot: microduck
+tags: [locomotion]
+author: wbc-mjlab
+links: {code: 'https://github.com/micro-zoo/wbc-mjlab'}
+thumbnail: thumb.png
+defaultClip: body_xy_roll_yaw_sweep
+camera: default
+artifacts:
+  onnx: policy.onnx
+  config: config.yaml
+  clips: {kind: manifest, file: motion_library.yaml, default: body_height_pitch_sweep}

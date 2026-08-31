@@ -52,6 +52,7 @@ import { createBallActor } from "./ball-actor.js";
 import { initGhosts } from "./ghosts.js";
 import { makeInfiniteGrid, makeArenaWalls } from "./arena.js";
 import { createBallVisual } from "./ball-visual.js";
+import { loadWbcRuntime } from "./wbc.js";
 import { useGame, gameApi, bootLine, bootNote, bootHalt } from "../store.js";
 
 // Physics + inference runtimes stay on the CDN, exactly like the pre-Vite
@@ -391,6 +392,19 @@ async function boot({ scene, camera, renderer }) {
   let sitFlag = 0;
   const isKick = () => mode === "kickL" || mode === "kickR";
 
+  // Two independent control stacks share the same MuJoCo model. Skills
+  // consume a 61D operator command observation; WBC consumes a 24D motion
+  // reference plus robot feedback and predicts a residual around the
+  // reference joint pose. The WBC assets stay lazy until first selected.
+  let controlMode = "skills"; // "skills" | "wbc"
+  let wbcBundle = null;
+  let wbcBundleLoading = null;
+  let wbcClip = null;
+  let wbcFrame = 0;
+  let wbcObs = null;
+  let wbcRequest = 0;
+  let controlEpoch = 0;
+
   // HEAD mode (runtime-faithful, pad Y): locomotion is zeroed and both
   // sticks drive the head command slots cmd[3..6] = [neck_pitch,
   // head_pitch, head_yaw, head_roll]. Targets are stick * HEAD_MAX,
@@ -510,6 +524,7 @@ async function boot({ scene, camera, renderer }) {
   }
 
   function resetSim() {
+    controlEpoch++;
     // A live grab must not survive a reset: the per-step spring would
     // immediately yank the respawned duck toward the stale cursor target.
     endGrabHook();
@@ -524,6 +539,7 @@ async function boot({ scene, camera, renderer }) {
     recovery = null;
     fallDebounce = 0;
     mode = "walk";
+    wbcFrame = 0;
     // Head mode exits and its offsets DO reset here (the one place).
     headMode = false;
     padSource.headMode = false;
@@ -538,6 +554,9 @@ async function boot({ scene, camera, renderer }) {
     // cancelled: a reset means no ball.
     ball?.despawn({ cancelQueued: true, parkPhysics: parkBallPhysics });
     ballActive = false;
+    if (controlMode === "wbc") {
+      setStore({ wbcProgress: { frame: 0, frames: wbcClip?.frames ?? 0 } });
+    }
     syncButtons();
     ceremony?.playRespawn();
   }
@@ -644,6 +663,32 @@ async function boot({ scene, camera, renderer }) {
     return obs;
   }
 
+  function buildWbcObs() {
+    if (!wbcBundle || !wbcClip || !wbcObs) throw new Error("WBC control selected before assets loaded");
+    const { runtime } = wbcBundle;
+    const qpos = data.qpos, qvel = data.qvel, sens = data.sensordata;
+    const refStart = wbcFrame * runtime.referenceCommandSize;
+    wbcObs.set(
+      wbcClip.values.subarray(refStart, refStart + runtime.referenceCommandSize),
+      0,
+    );
+    let i = runtime.referenceCommandSize;
+    for (let a = 0; a < 3; a++) wbcObs[i++] = sens[gyroAdr + a];
+    const xq = data.body(trunkId).xquat;
+    _q.set(xq[1], xq[2], xq[3], xq[0]).conjugate();
+    _g.set(0, 0, -1).applyQuaternion(_q);
+    wbcObs[i++] = _g.x; wbcObs[i++] = _g.y; wbcObs[i++] = _g.z;
+    for (let j = 0; j < NUM_JOINTS; j++) {
+      wbcObs[i++] = qpos[qposAdr[j]] - runtime.defaultJointPosition[j];
+    }
+    for (let j = 0; j < NUM_JOINTS; j++) wbcObs[i++] = qvel[dofAdr[j]];
+    for (let j = 0; j < NUM_JOINTS; j++) wbcObs[i++] = lastAction[j];
+    if (i !== runtime.observationSize) {
+      throw new Error(`WBC observation size mismatch: built ${i}, expected ${runtime.observationSize}`);
+    }
+    return wbcObs;
+  }
+
   // The ONNX session for the current mode: in the roller variant the main
   // velocity mode runs the drive (skating) policy instead of the walker,
   // and the fall-recovery state machine overrides everything with the
@@ -683,12 +728,41 @@ async function boot({ scene, camera, renderer }) {
     // Settle phase: ctrl frozen on the pose held at the fall (approximates
     // the runtime's limp beat), physics keeps stepping, no inference.
     if (recovery?.state !== "fallen") {
-      const feeds = { obs: new ort.Tensor("float32", buildObs(), [1, OBS_SIZE]) };
-      const out = await activeSession().run(feeds);
-      const act = out.actions.data;
-      lastAction.set(act);
-      const ctrl = data.ctrl;
-      for (let j = 0; j < NUM_JOINTS; j++) ctrl[j] = DEFAULT_POSE[j] + act[j] * ACTION_SCALE;
+      if (controlMode === "wbc") {
+        const { runtime, session } = wbcBundle;
+        const runClip = wbcClip;
+        const runFrame = wbcFrame;
+        const runEpoch = controlEpoch;
+        const feeds = {
+          [runtime.inputName]: new ort.Tensor(
+            "float32",
+            buildWbcObs(),
+            [1, runtime.observationSize],
+          ),
+        };
+        const out = await session.run(feeds);
+        // A reset, clip change or control-stack switch can happen while
+        // WASM inference yields. Never apply that stale result afterward.
+        if (controlMode === "wbc" && runEpoch === controlEpoch &&
+            runClip === wbcClip && runFrame === wbcFrame) {
+          const act = out[runtime.outputName].data;
+          lastAction.set(act);
+          const ctrl = data.ctrl;
+          const refStart = runFrame * runtime.referenceCommandSize +
+            runtime.referenceJointPositionOffset;
+          for (let j = 0; j < NUM_JOINTS; j++) {
+            ctrl[j] = runClip.values[refStart + j] + act[j] * runtime.actionScale;
+          }
+          wbcFrame = (runFrame + 1) % runClip.frames;
+        }
+      } else {
+        const feeds = { obs: new ort.Tensor("float32", buildObs(), [1, OBS_SIZE]) };
+        const out = await activeSession().run(feeds);
+        const act = out.actions.data;
+        lastAction.set(act);
+        const ctrl = data.ctrl;
+        for (let j = 0; j < NUM_JOINTS; j++) ctrl[j] = DEFAULT_POSE[j] + act[j] * ACTION_SCALE;
+      }
     }
     for (let s = 0; s < DECIMATION; s++) {
       applyGrabForce(); // mouse perturbation, fresh velocity every substep
@@ -720,7 +794,7 @@ async function boot({ scene, camera, renderer }) {
         }
       }
     } else if (death === "fallen") {
-      const recoverable = loco === "legs" && mode === "walk" &&
+      const recoverable = controlMode === "skills" && loco === "legs" && mode === "walk" &&
         !inputLocked && postKickLock === 0 && !standTimer;
       if (recoverable) {
         fallenSince = null;
@@ -936,6 +1010,11 @@ async function boot({ scene, camera, renderer }) {
   let locoSwitching = false;
   async function setLoco(name, { force = false } = {}) {
     if (name !== "legs" && name !== "rollers") return;
+    if (name === "rollers" && controlMode === "wbc") {
+      // WBC was trained for the leg model. A roller request is also an
+      // explicit request to return ownership to the regular skill stack.
+      await setControlMode("skills");
+    }
     if (loco === name || locoSwitching) return;
     if (!force && (inputLocked || rollRun || kickRun || crouchRun || pickRun ||
         standTimer || recovery)) return;
@@ -958,8 +1037,111 @@ async function boot({ scene, camera, renderer }) {
 
   async function toggleLoco() {
     const next = loco === "legs" ? "rollers" : "legs";
+    if (next === "rollers" && controlMode === "wbc") await setControlMode("skills");
     setStore({ locoWant: next });
     await setLoco(next);
+  }
+
+  // ── WBC policy + reference stream (lazy) ───────────────────────────
+  function ensureWbc() {
+    if (wbcBundle) return Promise.resolve(wbcBundle);
+    if (!wbcBundleLoading) {
+      wbcBundleLoading = loadWbcRuntime({
+        ort,
+        sessionOptions: sessionOpts,
+        expectedJointNames: JOINT_NAMES,
+        expectedDefaultJointPosition: DEFAULT_POSE,
+      }).then((bundle) => {
+        wbcBundle = bundle;
+        wbcObs = new Float32Array(bundle.runtime.observationSize);
+        setStore({
+          wbcClips: bundle.clips.map(({ id, name, durationSec, frames }) => ({
+            id, name, durationSec, frames,
+          })),
+          wbcClip: store().wbcClip || bundle.runtime.defaultClip,
+        });
+        return bundle;
+      }).catch((error) => {
+        wbcBundleLoading = null;
+        throw error;
+      });
+    }
+    return wbcBundleLoading;
+  }
+
+  async function setControlMode(next) {
+    if (next !== "skills" && next !== "wbc") return;
+    const request = ++wbcRequest;
+    if (next === "skills") {
+      const changed = controlMode !== "skills";
+      controlMode = "skills";
+      setStore({ controlMode, wbcLoading: false, wbcError: null });
+      if (changed) resetSim();
+      else syncButtons();
+      return;
+    }
+
+    setStore({ wbcLoading: true, wbcError: null });
+    try {
+      const bundle = await ensureWbc();
+      const clipId = store().wbcClip || bundle.runtime.defaultClip;
+      const clip = await bundle.loadClip(clipId);
+      if (request !== wbcRequest) return;
+      setStore({ locoWant: "legs" });
+      while (locoSwitching) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        if (request !== wbcRequest) return;
+      }
+      if (loco !== "legs") {
+        await setLoco("legs", { force: true });
+      }
+      if (request !== wbcRequest) return;
+      if (loco !== "legs") throw new Error("WBC could not activate the leg model");
+      wbcClip = clip;
+      wbcFrame = 0;
+      lastAction.fill(0);
+      controlMode = "wbc";
+      setStore({
+        controlMode,
+        wbcLoading: false,
+        wbcError: null,
+        wbcClip: clip.id,
+        wbcProgress: { frame: 0, frames: clip.frames },
+      });
+      resetSim();
+    } catch (error) {
+      if (request !== wbcRequest) return;
+      controlMode = "skills";
+      const message = error?.message || String(error);
+      console.error("[game] WBC load failed", error);
+      setStore({ controlMode, wbcLoading: false, wbcError: message });
+      syncButtons();
+    }
+  }
+
+  async function setWbcClip(id) {
+    const request = ++wbcRequest;
+    setStore({ wbcLoading: true, wbcError: null });
+    try {
+      const bundle = await ensureWbc();
+      const clip = await bundle.loadClip(id);
+      if (request !== wbcRequest) return;
+      wbcClip = clip;
+      wbcFrame = 0;
+      lastAction.fill(0);
+      setStore({
+        wbcLoading: false,
+        wbcError: null,
+        wbcClip: clip.id,
+        wbcProgress: { frame: 0, frames: clip.frames },
+      });
+      if (controlMode === "wbc") resetSim();
+    } catch (error) {
+      if (request !== wbcRequest) return;
+      const message = error?.message || String(error);
+      console.error("[game] WBC clip load failed", error);
+      setStore({ wbcLoading: false, wbcError: message });
+    }
   }
 
   // Quickbar loco intent: reconcile locoWant -> actual, retrying until the
@@ -1476,6 +1658,9 @@ async function boot({ scene, camera, renderer }) {
         odo: odoM,
         peers: ghosts?.peerCount() ?? 0,
       },
+      ...(controlMode === "wbc" && wbcClip
+        ? { wbcProgress: { frame: wbcFrame, frames: wbcClip.frames } }
+        : {}),
     });
   }
 
@@ -1607,7 +1792,8 @@ async function boot({ scene, camera, renderer }) {
     // Enterable from walk or sit only - never during one-shots (roll /
     // kick / crouch), the post-kick grace, a stand-up hand-back, a fall
     // recovery, or while the entrance/respawn lock holds the inputs.
-    if (inputLocked || (mode !== "walk" && mode !== "sitstand") || postKickLock > 0 ||
+    if (controlMode !== "skills" || inputLocked ||
+        (mode !== "walk" && mode !== "sitstand") || postKickLock > 0 ||
         standTimer || recovery)
       return;
     headMode = true;
@@ -1616,6 +1802,7 @@ async function boot({ scene, camera, renderer }) {
   }
 
   function setMode(next, { force = false } = {}) {
+    if (controlMode !== "skills") return;
     if (!force && inputLocked) return;
     // No policy switching mid-roll or mid-kick: both end on their own and
     // return to walk - switching now would floor the duck. Same while the
@@ -1664,7 +1851,7 @@ async function boot({ scene, camera, renderer }) {
   // policy switches, and the roll initiates more reliably mid-gait.
   function triggerRoll(source = "kb") {
     if (loco === "rollers") return triggerCrouch(source);
-    if (inputLocked || mode !== "walk" || standTimer || recovery) return;
+    if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return;
     exitHeadMode();
     clearModeTimers();
     mode = "roll";
@@ -1676,7 +1863,7 @@ async function boot({ scene, camera, renderer }) {
 
   // Roller-only one-shot: crouch, glide low, stand back up (phase-driven).
   function triggerCrouch(source = "kb") {
-    if (inputLocked || mode !== "walk" || locoSwitching || recovery) return;
+    if (controlMode !== "skills" || inputLocked || mode !== "walk" || locoSwitching || recovery) return;
     exitHeadMode();
     clearModeTimers();
     mode = "crouch";
@@ -1691,7 +1878,7 @@ async function boot({ scene, camera, renderer }) {
   // one-shot / a stand-up hand-back / the entrance lock.
   function triggerGroundPick(source = "kb") {
     if (loco !== "legs") return;
-    if (inputLocked || mode !== "walk" || standTimer || recovery) return;
+    if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return;
     exitHeadMode();
     clearModeTimers();
     mode = "groundpick";
@@ -1705,7 +1892,7 @@ async function boot({ scene, camera, renderer }) {
   // alternation only advances on real kicks.
   function triggerKick(foot, source = "kb") {
     if (loco === "rollers") return false;
-    if (inputLocked || mode !== "walk" || standTimer || recovery) return false;
+    if (controlMode !== "skills" || inputLocked || mode !== "walk" || standTimer || recovery) return false;
     exitHeadMode();
     clearModeTimers();
     mode = foot === "left" ? "kickL" : "kickR";
@@ -1719,7 +1906,8 @@ async function boot({ scene, camera, renderer }) {
   function syncButtons() {
     const sitting = mode === "sitstand" && sitFlag === 1;
     const label =
-      recovery ? "Recovery"
+      controlMode === "wbc" ? "WBC"
+      : recovery ? "Recovery"
       : mode === "roll" ? "Roll"
       : mode === "crouch" ? "Crouch"
       : mode === "groundpick" ? "Pick"
@@ -1746,6 +1934,8 @@ async function boot({ scene, camera, renderer }) {
       setStore({ locoWant: name });
       reconcileLoco();
     },
+    requestControlMode: (name) => { void setControlMode(name); },
+    requestWbcClip: (id) => { void setWbcClip(id); },
     resetSim,
     spawnBall: () => spawnBall(),
     startEntrance: () => ceremony.startEntrance(),
@@ -1766,6 +1956,11 @@ async function boot({ scene, camera, renderer }) {
     get loco() { return loco; },
     get locoSwitching() { return locoSwitching; },
     toggleLoco, setLoco, ensureRollers,
+    get controlMode() { return controlMode; },
+    get wbcBundle() { return wbcBundle; },
+    get wbcClip() { return wbcClip; },
+    get wbcFrame() { return wbcFrame; },
+    buildWbcObs, ensureWbc, setControlMode, setWbcClip,
     triggerCrouch,
     get crouchPhase() { return crouchRun?.phase ?? null; },
     triggerGroundPick,

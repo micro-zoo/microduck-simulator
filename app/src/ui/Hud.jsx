@@ -265,6 +265,11 @@ function PreorderButton() {
 function Quickbar() {
   const variant = useGame((s) => s.variant);
   const locoWant = useGame((s) => s.locoWant);
+  const controlMode = useGame((s) => s.controlMode);
+  const wbcLoading = useGame((s) => s.wbcLoading);
+  const wbcClip = useGame((s) => s.wbcClip);
+  const wbcClips = useGame((s) => s.wbcClips);
+  const selectedControl = wbcLoading ? "wbc" : controlMode;
   return (
     <Box
       sx={{
@@ -370,14 +375,89 @@ function Quickbar() {
           })}
         </Box>
       </HudPlate>
+      <HudPlate caption="Control">
+        <Box
+          role="group"
+          aria-label="Control stack"
+          sx={{
+            display: "inline-flex",
+            alignItems: "stretch",
+            height: "100%",
+            gap: `${CELL_GAP}px`,
+          }}
+        >
+          {[
+            { name: "skills", label: "Skills" },
+            { name: "wbc", label: "WBC" },
+          ].map(({ name, label }) => {
+            const selected = selectedControl === name;
+            return (
+              <Box
+                key={name}
+                component="button"
+                type="button"
+                aria-pressed={selected}
+                onClick={() => gameApi.requestControlMode?.(name)}
+                sx={{
+                  ...hudHitSx,
+                  px: "1.05rem",
+                  background: selected ? ORANGE : "transparent",
+                  color: selected ? COMIC_INK : "rgba(250, 248, 242, 0.72)",
+                  "&:hover": {
+                    color: selected ? COMIC_INK : CREAM,
+                    background: selected ? ORANGE : "rgba(255, 122, 47, 0.12)",
+                  },
+                  "&:active": { filter: "brightness(0.92)" },
+                }}
+              >
+                {label}
+              </Box>
+            );
+          })}
+        </Box>
+      </HudPlate>
+      {(controlMode === "wbc" || wbcLoading) && (
+        <HudPlate caption="WBC Motion">
+          <Box
+            component="select"
+            aria-label="WBC reference motion"
+            value={wbcClip}
+            disabled={wbcLoading || wbcClips.length === 0}
+            onChange={(event) => gameApi.requestWbcClip?.(event.target.value)}
+            sx={{
+              ...hudHitSx,
+              minWidth: "13rem",
+              maxWidth: "18rem",
+              px: "0.8rem",
+              pr: "2rem",
+              background: "rgba(8, 8, 12, 0.72)",
+              color: CREAM,
+              "&:disabled": { cursor: "wait", opacity: 0.65 },
+              "& option": { color: COMIC_INK, background: CREAM },
+            }}
+          >
+            {wbcClips.length === 0 ? <option value="">Loading motions…</option> : null}
+            {wbcClips.map((clip) => (
+              <option key={clip.id} value={clip.id}>
+                {clip.name} · {clip.durationSec.toFixed(1)}s
+              </option>
+            ))}
+          </Box>
+        </HudPlate>
+      )}
     </Box>
   );
 }
 
 function Telemetry() {
   const t = useGame((s) => s.telemetry);
+  const controlMode = useGame((s) => s.controlMode);
+  const wbcProgress = useGame((s) => s.wbcProgress);
   const odo = t.odo < 1000 ? `${t.odo.toFixed(1)}M` : `${(t.odo / 1000).toFixed(2)}KM`;
   const lines = [];
+  if (controlMode === "wbc" && wbcProgress.frames) {
+    lines.push(`WBC ${wbcProgress.frame + 1}/${wbcProgress.frames}`);
+  }
   if (t.peers) lines.push(`${t.peers + 1} ONLINE`);
   lines.push(`${t.speed.toFixed(2)}M/S \u00b7 ODO ${odo}`);
   lines.push(`FPS ${t.fps} \u00b7 CTRL ${t.ctrlHz}HZ`);
@@ -408,7 +488,12 @@ function Telemetry() {
 
 function OsdLoad() {
   const rollersLoading = useGame((s) => s.rollersLoading);
-  if (!rollersLoading) return null;
+  const wbcLoading = useGame((s) => s.wbcLoading);
+  const wbcError = useGame((s) => s.wbcError);
+  if (!rollersLoading && !wbcLoading && !wbcError) return null;
+  const message = wbcError
+    ? `WBC ERROR · ${wbcError}`
+    : wbcLoading ? "LOADING WBC" : "LOADING ROLLERS";
   return (
     <Box
       sx={{
@@ -419,17 +504,21 @@ function OsdLoad() {
         fontFamily: MONO,
         fontSize: "0.68rem",
         letterSpacing: "0.14em",
-        color: ORANGE,
+        color: wbcError ? "#ff6b6b" : ORANGE,
         textShadow: "0 0 8px rgba(255, 122, 47, 0.4)",
+        maxWidth: "min(34rem, calc(100vw - 3rem))",
+        textAlign: "right",
       }}
     >
-      LOADING ROLLERS
-      <Box
-        component="span"
-        sx={{ display: "inline-block", ml: "0.15em", animation: `${recBlink} 0.8s steps(1) infinite` }}
-      >
-        {"\u2588"}
-      </Box>
+      {message}
+      {!wbcError ? (
+        <Box
+          component="span"
+          sx={{ display: "inline-block", ml: "0.15em", animation: `${recBlink} 0.8s steps(1) infinite` }}
+        >
+          {"\u2588"}
+        </Box>
+      ) : null}
     </Box>
   );
 }

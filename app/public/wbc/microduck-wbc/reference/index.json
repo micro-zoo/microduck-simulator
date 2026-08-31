@@ -1,0 +1,414 @@
+{
+  "schema": "wbc_reference_stream_v1",
+  "robot": "microduck",
+  "commandDim": 24,
+  "fps": 50.0,
+  "jointNames": [
+    "left_hip_yaw",
+    "left_hip_roll",
+    "left_hip_pitch",
+    "left_knee",
+    "left_ankle",
+    "neck_pitch",
+    "head_pitch",
+    "head_yaw",
+    "head_roll",
+    "right_hip_yaw",
+    "right_hip_roll",
+    "right_hip_pitch",
+    "right_knee",
+    "right_ankle"
+  ],
+  "refTerms": [
+    {
+      "name": "ref_base_height",
+      "dim": 1
+    },
+    {
+      "name": "ref_base_lin_vel_b",
+      "dim": 3
+    },
+    {
+      "name": "ref_base_ang_vel_b",
+      "dim": 3
+    },
+    {
+      "name": "ref_gravity_b",
+      "dim": 3
+    },
+    {
+      "name": "ref_joint_pos",
+      "dim": 14
+    }
+  ],
+  "clips": [
+    {
+      "id": "body_height_pitch_sweep",
+      "name": "Body Height Pitch Sweep",
+      "file": "body_height_pitch_sweep.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "body_xy_roll_yaw_sweep",
+      "name": "Body Xy Roll Yaw Sweep",
+      "file": "body_xy_roll_yaw_sweep.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "ground_pick_fast",
+      "name": "Ground Pick Fast",
+      "file": "ground_pick_fast.bin",
+      "frames": 349,
+      "durationSec": 6.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "ground_pick_slow",
+      "name": "Ground Pick Slow",
+      "file": "ground_pick_slow.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "head_neck_roll_sweep",
+      "name": "Head Neck Roll Sweep",
+      "file": "head_neck_roll_sweep.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "head_pitch_yaw_sweep",
+      "name": "Head Pitch Yaw Sweep",
+      "file": "head_pitch_yaw_sweep.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "kick_left",
+      "name": "Kick Left",
+      "file": "kick_left.bin",
+      "frames": 250,
+      "durationSec": 5.0,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "kick_left_focus",
+      "name": "Kick Left Focus",
+      "file": "kick_left_focus.bin",
+      "frames": 124,
+      "durationSec": 2.48,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "kick_right",
+      "name": "Kick Right",
+      "file": "kick_right.bin",
+      "frames": 250,
+      "durationSec": 5.0,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "kick_right_focus",
+      "name": "Kick Right Focus",
+      "file": "kick_right_focus.bin",
+      "frames": 124,
+      "durationSec": 2.48,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "stand_hold",
+      "name": "Stand Hold",
+      "file": "stand_hold.bin",
+      "frames": 299,
+      "durationSec": 5.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "turn_left_075",
+      "name": "Turn Left 075",
+      "file": "turn_left_075.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "turn_left_100",
+      "name": "Turn Left 100",
+      "file": "turn_left_100.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "turn_left_150",
+      "name": "Turn Left 150",
+      "file": "turn_left_150.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "turn_right_075",
+      "name": "Turn Right 075",
+      "file": "turn_right_075.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "turn_right_100",
+      "name": "Turn Right 100",
+      "file": "turn_right_100.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "turn_right_150",
+      "name": "Turn Right 150",
+      "file": "turn_right_150.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_arc_left",
+      "name": "Walk Arc Left",
+      "file": "walk_arc_left.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_arc_right",
+      "name": "Walk Arc Right",
+      "file": "walk_arc_right.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_back_arc_right",
+      "name": "Walk Back Arc Right",
+      "file": "walk_back_arc_right.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_back_diag_left",
+      "name": "Walk Back Diag Left",
+      "file": "walk_back_diag_left.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_back_diag_right",
+      "name": "Walk Back Diag Right",
+      "file": "walk_back_diag_right.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_backward_020",
+      "name": "Walk Backward 020",
+      "file": "walk_backward_020.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_backward_024",
+      "name": "Walk Backward 024",
+      "file": "walk_backward_024.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_backward_030",
+      "name": "Walk Backward 030",
+      "file": "walk_backward_030.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_diag_left",
+      "name": "Walk Diag Left",
+      "file": "walk_diag_left.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_diag_right",
+      "name": "Walk Diag Right",
+      "file": "walk_diag_right.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_forward_016",
+      "name": "Walk Forward 016",
+      "file": "walk_forward_016.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_forward_020",
+      "name": "Walk Forward 020",
+      "file": "walk_forward_020.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_forward_024",
+      "name": "Walk Forward 024",
+      "file": "walk_forward_024.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_forward_028",
+      "name": "Walk Forward 028",
+      "file": "walk_forward_028.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_forward_030",
+      "name": "Walk Forward 030",
+      "file": "walk_forward_030.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_left_030",
+      "name": "Walk Left 030",
+      "file": "walk_left_030.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_right_024",
+      "name": "Walk Right 024",
+      "file": "walk_right_024.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "walk_right_030",
+      "name": "Walk Right 030",
+      "file": "walk_right_030.bin",
+      "frames": 399,
+      "durationSec": 7.98,
+      "tags": [
+        "walk",
+        "locomotion"
+      ]
+    }
+  ]
+}

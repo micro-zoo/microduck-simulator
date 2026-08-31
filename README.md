@@ -19,6 +19,11 @@ the default) and **rollers** (the wheeled skating variant). Press `M` (or
 hold D-pad up ~1 s on a gamepad) to switch; the roller model, meshes and
 policies are lazy-loaded on the first switch.
 
+The feet model also has a **WBC** control stack. Select `WBC` in the HUD,
+then choose one of the 35 reference motions. The browser runs the tracking
+policy closed-loop at 50 Hz; this is not prerecorded pose playback. The WBC
+policy, motion index and selected reference stream are lazy-loaded on first use.
+
 ## Policies
 
 | Mode | Checkpoint | What it does |
@@ -29,10 +34,13 @@ policies are lazy-loaded on the first switch.
 | Kick | `ball_kick_left.onnx` / `ball_kick_right.onnx` | Blind one-shot kick (0.5 s window, zeroed commands), left or right leg |
 | Drive (rollers) | `BEST_roller.onnx` | Velocity-tracking skating on 4 passive wheels (higher top speed: 0.6 m/s) |
 | Crouch (rollers) | `BEST_roller_crouch.onnx` | One-shot crouch-glide: sinks low over ~3.5 s and stands back up (phase-encoded command) |
+| WBC (legs) | `wbc/microduck-wbc/policy.onnx` | Tracks the selected whole-body reference with policy-predicted joint residuals |
 
 Policies and MJCF model from
 [pollen-robotics/microduck](https://github.com/pollen-robotics/microduck)
 and [pollen-robotics/microduck_rl](https://github.com/pollen-robotics/microduck_rl).
+The WBC policy and 35-motion `teacher_train` reference library come from
+[micro-zoo/wbc-mjlab](https://github.com/micro-zoo/wbc-mjlab).
 
 ## Controls
 
@@ -44,9 +52,16 @@ and [pollen-robotics/microduck_rl](https://github.com/pollen-robotics/microduck_
 - Space: reset
 - Drag to orbit, scroll to zoom
 - Colour dots: repaint the duck (it quacks)
+- Control panel: switch between operator-driven Skills and WBC motion tracking
+- WBC Motion: select the reference clip; changing clips restarts from frame 0
 
 In roller mode the legs-only actions (kicks, sit) are disabled and their
 hints fade out; play the ball by driving into it.
+
+WBC is feet-only. Selecting WBC while rollers are active switches back to
+feet; selecting rollers while WBC is active returns to the Skills stack.
+Normal locomotion, sit, roll, kick and head-mode inputs do not alter the robot
+while the WBC tracker owns control. Reset restarts the selected motion.
 
 ### URL parameters
 
@@ -102,11 +117,17 @@ UI intents in).
   visual geoms, injects a floor, arena walls, a ball, a collision box for
   the arcade cabinet row and a STAND keyframe, and compiles it with the
   official `@mujoco/mujoco` WASM bindings.
-- Both variants share the exact same policy interface: 61D observation
+- The regular Skills stack on both variants shares the exact same policy interface: 61D observation
   (gyro, projected gravity, 14 joint pos/vel, last action, 13D command)
   and 14 position-targets, matching [`microduck_rl/scripts/infer_policy.py`](https://github.com/pollen-robotics/microduck_rl/blob/main/scripts/infer_policy.py).
   The roller variant adds 4 passive wheel hinges that appear in `qpos`
   (zeroed in the keyframe) but not in the observation.
+- WBC uses its exported 72D actor observation: a 24D reference command
+  (base height, body-frame linear/angular velocity, gravity and 14 reference
+  joint positions), followed by gyro, projected gravity, 14 relative joint
+  positions, 14 joint velocities and the previous 14D residual action. Its
+  control target is `reference_joint_position + residual_action`, matching
+  the policy's `reference_residual` training contract.
 - Rendering is a three.js rig built from `kinematics.json` /
   `kinematics_rollers.json` + decimated STL meshes, driven directly from
   MuJoCo `qpos` (including the passive wheel spin).

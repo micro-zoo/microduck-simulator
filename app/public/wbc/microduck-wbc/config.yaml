@@ -1,0 +1,66 @@
+schema: wbc_tracking_params_v1
+robot: microduck
+joint_names:
+  - left_hip_yaw
+  - left_hip_roll
+  - left_hip_pitch
+  - left_knee
+  - left_ankle
+  - neck_pitch
+  - head_pitch
+  - head_yaw
+  - head_roll
+  - right_hip_yaw
+  - right_hip_roll
+  - right_hip_pitch
+  - right_knee
+  - right_ankle
+default_joint_pos:
+  - 0.0
+  - -0.08726646259971647
+  - -0.457924
+  - -0.00494
+  - 0.452984
+  - 0.3490658503988659
+  - 0.3490658503988659
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.08726646259971647
+  - 0.457924
+  - 0.00494
+  - -0.452984
+actions:
+  joint_pos:
+    mode: reference_residual
+    scale: 1.0
+actor_observations:
+  ref_base_height: {dim: 1}
+  ref_base_lin_vel_b: {dim: 3}
+  ref_base_ang_vel_b: {dim: 3}
+  ref_gravity_b: {dim: 3}
+  ref_joint_pos: {dim: 14}
+  base_ang_vel: {dim: 3}
+  projected_gravity: {dim: 3}
+  joint_pos: {dim: 14}
+  joint_vel: {dim: 14}
+  actions: {dim: 14}
+tracking:
+  anchor_body_name: trunk_base
+  reference_observation_names:
+    - ref_base_height
+    - ref_base_lin_vel_b
+    - ref_base_ang_vel_b
+    - ref_gravity_b
+    - ref_joint_pos
+  actor_observation_names:
+    - ref_base_height
+    - ref_base_lin_vel_b
+    - ref_base_ang_vel_b
+    - ref_gravity_b
+    - ref_joint_pos
+    - base_ang_vel
+    - projected_gravity
+    - joint_pos
+    - joint_vel
+    - actions
