@@ -52,7 +52,7 @@ const Kbd = styled("kbd")(({ round }) => ({
 const TILES = {
   kb: [
     { caps: "cluster-arrows", name: "Move", hint: "arrows or ZQSD" },
-    { caps: ["A", "E"], name: "Kick", hint: "left / right" },
+    { caps: ["Q", "E"], name: "Kick", hint: "left / right" },
     { caps: ["R"], name: "Sit", hint: "tap again to stand" },
     { caps: ["G"], name: "Pick up", hint: "beak to the ground" },
     { caps: ["C"], name: "Camera", hint: "toggle chase" },
