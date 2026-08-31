@@ -27,7 +27,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { signed } from "./signed.js";
 import {
   POLICIES, JOINT_NAMES, DEFAULT_POSE, NUM_JOINTS, OBS_SIZE, CMD_SIZE,
-  WALK_ACTION_SCALE, ROLLER_ACTION_SCALE, SKILL_ACTION_SCALE,
+  WALK_ACTION_SCALE, ROLLER_ACTION_SCALE, SKILL_ACTION_SCALE, RUN_ACTION_SCALE,
   STANDING_THRESHOLD,
   TIMESTEP, DECIMATION, CTRL_DT,
   VEL_FWD, VEL_BACK, VEL_ANG, RVEL_FWD, RVEL_BACK, RVEL_ANG,
@@ -35,9 +35,11 @@ import {
   BALL_RADIUS, BALL_PARK_POS, ARENA_HALF, SPAWN_X, SPAWN_Y,
   RELIEF_BUMPS, RELIEF_HMAX, RELIEF_GRID, RELIEF_SINK, RELIEF_RATE,
 } from "./constants.js";
+import { advanceRunRamp } from "./run-ramp.js";
 import { loadProps, propColliders } from "./props.js";
 import {
-  DEFAULT_SCENE, SCENES, SCENE_IDS, diningRoomColliders, loadDiningRoom,
+  DEFAULT_SCENE, SCENES, SCENE_IDS,
+  loadDiningRoom, loadApartment, loadLoft, loadVintageRoom, loadBackrooms,
 } from "./scenes.js";
 import {
   buildRig, cloneRig, loadKinematics, setJoint, setJawOpen, MODEL_DIR, MESH_VERSION,
@@ -216,9 +218,6 @@ async function boot({ scene, camera, renderer }) {
     for (const c of propColliders()) {
       appendSceneBox("arcade", c);
     }
-    for (const c of diningRoomColliders()) {
-      appendSceneBox("dining", c);
-    }
     // Kickable ball: a light free sphere (beach-ball feel). MuJoCo has no
     // restitution parameter - the bounce comes from solref damping < 1, and
     // the rolling-friction term makes it come to rest. Appended AFTER the
@@ -327,18 +326,18 @@ async function boot({ scene, camera, renderer }) {
       throw err;
     }
   })();
-  // Boot policies with a live [n/7] counter on the BIOS line.
+  // Boot policies with a live [n/8] counter on the BIOS line.
   const donePolicies = bootLine("LOADING POLICIES");
   const sessionOpts = { executionProviders: ["wasm"] };
   let policiesLoaded = 0;
   const bootPolicy = (url) =>
     ort.InferenceSession.create(signed(url), sessionOpts).then((s) => {
-      donePolicies.progress(`${++policiesLoaded}/7`);
+      donePolicies.progress(`${++policiesLoaded}/8`);
       return s;
     });
   try {
     [sessions.walk, sessions.sitstand, sessions.roll, sessions.kickL, sessions.kickR,
-     sessions.groundpick, sessions.stand] =
+     sessions.groundpick, sessions.stand, sessions.run] =
       await Promise.all([
         bootPolicy(POLICIES.walk),
         bootPolicy(POLICIES.sitstand),
@@ -347,13 +346,14 @@ async function boot({ scene, camera, renderer }) {
         bootPolicy(POLICIES.kickR),
         bootPolicy(POLICIES.groundpick),
         bootPolicy(POLICIES.stand),
+        bootPolicy(POLICIES.run),
       ]);
   } catch (err) {
     donePolicies("FAILED");
     bootHalt(err?.message || String(err));
     throw err;
   }
-  donePolicies("7/7");
+  donePolicies("8/8");
 
   const doneCompile = bootLine("COMPILING PHYSICS");
   let model, data;
@@ -485,6 +485,15 @@ async function boot({ scene, camera, renderer }) {
       return ZERO_CMD;
     return controller.getCommand();
   }
+
+  // Keyboard-only hold-to-sprint. It deliberately does not carry over
+  // turning or commands from another source, and remains unavailable during
+  // WBC or any skill hand-off.
+  function runForwardEligible() {
+    return controlMode === "skills" && loco === "legs" && mode === "walk" &&
+      !inputLocked && !headMode && !recovery && postKickLock === 0 && !standTimer &&
+      kbSource.pressed.fwd;
+  }
   let rollRun = null;
   let pickRun = null;
   let kickRun = null;
@@ -498,6 +507,20 @@ async function boot({ scene, camera, renderer }) {
   let sitTimer = null;
   let standTimer = null;
   let fallenSince = null;
+  let runCommandSpeed = VEL_FWD;
+  let runPolicyActive = false;
+
+  function stepRunCommand() {
+    const next = advanceRunRamp({
+      speed: runCommandSpeed,
+      policyActive: runPolicyActive,
+      forwardEligible: runForwardEligible(),
+      shiftHeld: kbSource.isSprinting(),
+    });
+    runCommandSpeed = next.speed;
+    runPolicyActive = next.policyActive;
+    return next;
+  }
 
   // ── Automatic fall recovery (legs walk mode only) ────────────────────
   // Mirrors the runtime's --fall-detect state machine (main.rs ~3658):
@@ -597,9 +620,16 @@ async function boot({ scene, camera, renderer }) {
     const spawn = SCENES[activeScene].spawn;
     data.qpos[0] = spawn[0];
     data.qpos[1] = spawn[1];
+    const heading = SCENES[activeScene].heading ?? 0;
+    data.qpos[3] = Math.cos(heading / 2);
+    data.qpos[4] = 0;
+    data.qpos[5] = 0;
+    data.qpos[6] = Math.sin(heading / 2);
     mujoco.mj_forward(model, data);
     lastAction.fill(0);
     sitFlag = 0;
+    runCommandSpeed = VEL_FWD;
+    runPolicyActive = false;
     // Park the ball in physics immediately; if it was on screen, the
     // reverse scan peels it away at its last pose. A queued B-respawn is
     // cancelled: a reset means no ball.
@@ -681,6 +711,7 @@ async function boot({ scene, camera, renderer }) {
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = qpos[qposAdr[j]] - DEFAULT_POSE[j];
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = qvel[dofAdr[j]];
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = lastAction[j];
+    const runCommand = stepRunCommand();
     // command: walking/drive use the twist; sitstand uses cmd[0] as the
     // posture flag; ground pick carries its phase encoding in the velocity
     // slots ([cos, sin, 0]).
@@ -691,6 +722,8 @@ async function boot({ scene, camera, renderer }) {
       const a = 2 * Math.PI * pickRun.phase;
       cmd[0] = Math.cos(a);
       cmd[1] = Math.sin(a);
+    } else if (runCommand.policyActive) {
+      cmd[0] = runCommand.speed;
     } else {
       const c = effectiveCmd();
       cmd[0] = c[0]; cmd[1] = c[1]; cmd[2] = c[2];
@@ -742,6 +775,9 @@ async function boot({ scene, camera, renderer }) {
   const activePolicy = () => {
     if (recovery?.state === "recovering") {
       return { id: "stand", session: sessions.stand, scale: SKILL_ACTION_SCALE };
+    }
+    if (runPolicyActive && runForwardEligible()) {
+      return { id: "run", session: sessions.run, scale: RUN_ACTION_SCALE };
     }
     if (loco === "legs" && mode === "walk" && Math.hypot(cmd[0], cmd[1], cmd[2]) <= STANDING_THRESHOLD) {
       return { id: "stand", session: sessions.stand, scale: SKILL_ACTION_SCALE };
@@ -1018,17 +1054,14 @@ async function boot({ scene, camera, renderer }) {
     qposAdr, dofAdr, gyroAdr, trunkId, standKeyId, ballQposAdr, ballDofAdr, extraJoints,
   };
 
-  const physicsSceneGeomNames = {
-    arcade: [
-      ...["px", "nx", "py", "ny"].map((side) => `scene_arcade_wall_${side}`),
-      ...propColliders().map((collider) => collider.name),
-      "terrain",
-    ],
-    dining: [
-      ...["px", "nx", "py", "ny"].map((side) => `scene_dining_wall_${side}`),
-      ...diningRoomColliders().map((collider) => collider.name),
-    ],
-  };
+  const physicsSceneGeomNames = Object.fromEntries(SCENE_IDS.map((sceneId) => [
+    sceneId,
+    ["px", "nx", "py", "ny"].map((side) => `scene_${sceneId}_wall_${side}`),
+  ]));
+  physicsSceneGeomNames.arcade.push(
+    ...propColliders().map((collider) => collider.name),
+    "terrain",
+  );
 
   function applyPhysicsScene(targetModel, sceneId) {
     for (const [groupScene, names] of Object.entries(physicsSceneGeomNames)) {
@@ -1273,25 +1306,34 @@ async function boot({ scene, camera, renderer }) {
     THREE, GLTFLoader, signed, scene, camera, renderer, fx, ceremony,
   });
 
-  // ── Environment switching (arcade <-> dining room) ─────────────────
-  // Physics for both scenes is resident in every locomotion model. The
-  // 45 MB room GLB is lazy-loaded once, then switching is just visibility,
-  // collision masks and a safe respawn in the selected environment.
-  let diningRoomRoot = null;
-  let diningRoomLoading = null;
+  // ── Environment switching ───────────────────────────────────────────
+  // Physics boundaries for every scene are resident in each locomotion
+  // model. Visual rooms remain lazy: switching becomes visibility, collision
+  // masks and a safe respawn after their one-time GLB load.
+  const roomRoots = {};
+  const roomLoading = {};
+  const roomLoaders = {
+    dining: loadDiningRoom,
+    apartment: loadApartment,
+    loft: loadLoft,
+    vintage: loadVintageRoom,
+    backrooms: loadBackrooms,
+  };
   let sceneSwitching = false;
 
-  function ensureDiningRoom() {
-    diningRoomLoading ??= loadDiningRoom({ GLTFLoader, signed, scene })
+  function ensureRoom(sceneId) {
+    const loader = roomLoaders[sceneId];
+    if (!loader) return Promise.resolve(null);
+    roomLoading[sceneId] ??= loader({ GLTFLoader, signed, THREE, scene })
       .then((root) => {
-        diningRoomRoot = root;
+        roomRoots[sceneId] = root;
         return root;
       })
       .catch((error) => {
-        diningRoomLoading = null;
+        roomLoading[sceneId] = null;
         throw error;
       });
-    return diningRoomLoading;
+    return roomLoading[sceneId];
   }
 
   async function setScene(sceneId) {
@@ -1299,7 +1341,7 @@ async function boot({ scene, camera, renderer }) {
     sceneSwitching = true;
     setStore({ sceneWant: sceneId, sceneSwitching: true, sceneError: null });
     try {
-      if (sceneId === "dining") await ensureDiningRoom();
+      await ensureRoom(sceneId);
       activeScene = sceneId;
       arenaHalf = SCENES[sceneId].arenaHalf;
       applyPhysicsScene(model, sceneId);
@@ -1309,7 +1351,9 @@ async function boot({ scene, camera, renderer }) {
       for (const groups of Object.values(propGroups)) {
         for (const group of groups) group.visible = arcadeVisible;
       }
-      if (diningRoomRoot) diningRoomRoot.visible = sceneId === "dining";
+      for (const [roomSceneId, root] of Object.entries(roomRoots)) {
+        root.visible = sceneId === roomSceneId;
+      }
       controls.maxDistance = SCENES[sceneId].cameraMaxDistance;
       resetSim();
       setStore({ scene: sceneId, sceneWant: sceneId });
@@ -1436,8 +1480,9 @@ async function boot({ scene, camera, renderer }) {
     chaseYawFollow = yaw;
     chaseYawTracking = false;
     _tgtTo.set(qpos[0], qpos[2], -qpos[1]); // trunk at spawn, MJCF -> three
-    const horiz = CAM_HOME_DIST * Math.cos(CHASE_PITCH);
-    const vert = CAM_HOME_DIST * Math.sin(CHASE_PITCH);
+    const cameraDistance = SCENES[activeScene].cameraDistance ?? CAM_HOME_DIST;
+    const horiz = cameraDistance * Math.cos(CHASE_PITCH);
+    const vert = cameraDistance * Math.sin(CHASE_PITCH);
     _camTo.set(
       _tgtTo.x - Math.cos(yaw) * horiz,
       _tgtTo.y + vert,
@@ -2089,8 +2134,9 @@ async function boot({ scene, camera, renderer }) {
     get locoSwitching() { return locoSwitching; },
     toggleLoco, setLoco, ensureRollers,
     get scene() { return activeScene; },
+    get renderScene() { return scene; },
     get sceneSwitching() { return sceneSwitching; },
-    setScene, ensureDiningRoom,
+    setScene, ensureRoom,
     get controlMode() { return controlMode; },
     get wbcBundle() { return wbcBundle; },
     get wbcClip() { return wbcClip; },

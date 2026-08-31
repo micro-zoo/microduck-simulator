@@ -16,6 +16,7 @@ import Box from "@mui/material/Box";
 import { keyframes } from "@mui/material/styles";
 import { useGame, gameApi } from "../store.js";
 import { VARIANT_LABELS, VARIANT_SWATCH_HEX } from "../game/variants.js";
+import { SCENE_IDS, SCENES } from "../game/scenes.js";
 import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
 import { readLayoutMap, resolveKeycaps } from "./keyboard-layout.js";
@@ -404,8 +405,9 @@ function Quickbar() {
             "& option": { color: COMIC_INK, background: CREAM },
           }}
         >
-          <option value="arcade">Arcade</option>
-          <option value="dining">Dining Room</option>
+          {SCENE_IDS.map((sceneId) => (
+            <option key={sceneId} value={sceneId}>{SCENES[sceneId].label}</option>
+          ))}
         </Box>
       </HudPlate>
       <HudPlate caption="Control">
@@ -636,6 +638,7 @@ function ControlHints() {
       ]
     : [
         { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Move" },
+        { caps: ["Shift", `${labels.KeyW} / ↑`], label: "Run 1.0" },
         { caps: [labels.KeyX], label: "Roll" },
         { caps: [labels.KeyG], label: "Pick" },
         { caps: [labels.KeyQ, labels.KeyE], label: "Kick" },

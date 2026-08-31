@@ -11,6 +11,8 @@ const KEYMAP = {
   ArrowRight: "turnr", KeyD: "turnr",
 };
 
+const SPRINT_KEYS = new Set(["ShiftLeft", "ShiftRight"]);
+
 // One-shot keys -> controller actions. Physical Q/E (A/E on AZERTY) are the
 // explicit left / right kicks, mirroring the pad's LB / RB; F alternates.
 // X launches the official roulade; R owns sit/stand and G owns ground-pick.
@@ -32,10 +34,11 @@ export class KeyboardSource {
   connected = true; // a keyboard is always assumed present
   command = new Float32Array(3); // [vx, 0, wz], scaled to velocity limits
   axes = { jaw: 0, orbitX: 0, orbitY: 0 }; // keyboard drives none of these
-  pressed = { fwd: false, back: false, turnl: false, turnr: false };
+  pressed = { fwd: false, back: false, turnl: false, turnr: false, sprint: false };
   onAction = () => {}; // assigned by the Controller at registration
 
   #held = new Set();
+  #sprintKeys = new Set();
   #getVelocityLimits;
   // Limits snapshot so poll() only re-maps held keys when they actually
   // change (the legs <-> rollers switch); event handlers do the live work.
@@ -57,6 +60,11 @@ export class KeyboardSource {
         this.onAction("reset");
         return;
       }
+      if (SPRINT_KEYS.has(e.code)) {
+        this.#sprintKeys.add(e.code);
+        this.pressed.sprint = true;
+        return;
+      }
       const action = ACTION_KEYS[e.code];
       if (action) {
         this.onAction(action);
@@ -69,6 +77,11 @@ export class KeyboardSource {
       this.#refresh();
     };
     this.#onKeyUp = (e) => {
+      if (SPRINT_KEYS.has(e.code)) {
+        this.#sprintKeys.delete(e.code);
+        this.pressed.sprint = this.#sprintKeys.size > 0;
+        return;
+      }
       const move = KEYMAP[e.code];
       if (!move) return;
       this.#held.delete(move);
@@ -77,6 +90,8 @@ export class KeyboardSource {
     // Losing window focus drops every held key (keyup events are missed).
     this.#onBlur = () => {
       this.#held.clear();
+      this.#sprintKeys.clear();
+      this.pressed.sprint = false;
       this.#refresh();
     };
     window.addEventListener("keydown", this.#onKeyDown);
@@ -93,6 +108,12 @@ export class KeyboardSource {
   // Claims twist authority while any movement key is held.
   isActive() {
     return this.#held.size > 0;
+  }
+
+  // Sprint is a modifier, not a movement source: Shift alone must not take
+  // twist authority away from a pad, touch control, or waypoint.
+  isSprinting() {
+    return this.#sprintKeys.size > 0;
   }
 
   // The command is event-driven (recomputed on keydown/keyup/blur, so a

@@ -50,7 +50,9 @@ export default function GameCanvas() {
       camera={{
         fov: 40,
         near: 0.02,
-        far: 30,
+        // The Backrooms scene keeps its authored ~29 m span; a 50 m far
+        // plane leaves room for its widest chase/orbit framing.
+        far: 50,
         position: [SPAWN_X + 0.55, 0.35, -SPAWN_Y + 0.7],
       }}
     >
