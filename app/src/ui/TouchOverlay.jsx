@@ -1,9 +1,10 @@
-// Touch overlay: Game Boy thumbs. Left thumb = floating virtual stick
-// (the whole lower-left quadrant grabs it, the base re-anchors under the
-// finger), right thumb = A/B caps on the classic diagonal.
+// Touch overlay: a floating left stick, a hold-to-run cap, and the two
+// immediate actions that benefit from arcade latency. The full touch control
+// deck (scene, modes, all actions) lives in MobileConsole.
 //
 // The DOM here is deliberately plain and keyed by ids: controls/touch.js
-// binds pointer events to #touch-zone / #touch-stick / #touch-a / #touch-b
+// binds pointer events to #touch-zone / #touch-stick / #touch-sprint /
+// #touch-a / #touch-b
 // at controller init and toggles the .live/.down classes itself. React
 // only owns the wrapper's visibility, so it never fights those mutations -
 // which is also why this component must stay mounted at all times.
@@ -70,6 +71,53 @@ export default function TouchOverlay() {
           width: "9.4rem",
           height: "8.4rem",
         },
+        "& #touch-sprint-wrap": {
+          position: "fixed",
+          left: "1.3rem",
+          bottom: "min(10.9rem, 34dvh)",
+          zIndex: 13,
+          display: loco === "rollers" ? "none" : "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "0.28rem",
+          pointerEvents: "auto",
+        },
+        "& #touch-sprint": {
+          appearance: "none",
+          minWidth: "4.6rem",
+          height: "2.7rem",
+          px: "0.75rem",
+          border: "2px solid rgba(255, 255, 255, 0.64)",
+          borderRadius: 0,
+          background: "rgba(8, 8, 12, 0.72)",
+          color: "rgba(255, 255, 255, 0.92)",
+          boxShadow: "2px 2px 0 rgba(0, 0, 0, 0.7)",
+          font: "inherit",
+          fontSize: "0.78rem",
+          fontWeight: 800,
+          letterSpacing: "0.11em",
+          cursor: "pointer",
+          touchAction: "none",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          WebkitTapHighlightColor: "transparent",
+          transition: "transform 0.12s ease, background 0.12s ease, color 0.12s ease",
+          "&:active, &.down": {
+            transform: "scale(0.96)",
+            background: ORANGE,
+            borderColor: ORANGE,
+            color: INK,
+          },
+          "&:focus-visible": { outline: "2px dashed #fff", outlineOffset: 3 },
+          "@media (prefers-reduced-motion: reduce)": { transition: "none" },
+        },
+        "& #touch-sprint-wrap span": {
+          fontSize: "0.55rem",
+          fontWeight: 600,
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: "rgba(255, 255, 255, 0.45)",
+        },
         "& .capwrap": {
           position: "absolute",
           display: "flex",
@@ -113,6 +161,10 @@ export default function TouchOverlay() {
         <div id="touch-stick">
           <div className="nub" />
         </div>
+      </div>
+      <div id="touch-sprint-wrap">
+        <button type="button" id="touch-sprint" aria-label="Hold to run">RUN</button>
+        <span>Hold + move</span>
       </div>
       <div id="touch-btns">
         <div className="capwrap cap-a">

@@ -10,6 +10,7 @@
 //                nub tracks the finger clamped to the base circle; the
 //                command is EMA-smoothed like the gamepad's so releases
 //                don't snap.
+//   Left index  RUN (#touch-sprint) holds the same sprint ramp as Shift.
 //   Right thumb  two round caps: A (#touch-a) fires alternateKick - the
 //                game alternates feet; B (#touch-b) quacks on press and
 //                holds the beak open (axes.jaw = 1) while held.
@@ -29,7 +30,11 @@ export class TouchSource {
   connected = false;
   command = new Float32Array(3); // [vx, 0, wz], EMA-smoothed
   axes = { jaw: 0, orbitX: 0, orbitY: 0 };
-  pressed = { stick: false, a: false, b: false };
+  pressed = { stick: false, a: false, b: false, sprint: false };
+  // The control deck owns these while HEAD mode is active. Keeping this
+  // shaped like the gamepad source makes the policy-side mapping identical.
+  headMode = false;
+  head = { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 };
   onAction = () => {}; // assigned by the Controller at registration
 
   #getVelocityLimits;
@@ -63,6 +68,7 @@ export class TouchSource {
 
     this.#bindButton("touch-a", "a", () => this.onAction("alternateKick"));
     this.#bindButton("touch-b", "b", () => this.onAction("quack"));
+    this.#bindButton("touch-sprint", "sprint", () => {});
   }
 
   dispose() {

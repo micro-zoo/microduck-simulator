@@ -72,14 +72,14 @@ const TILES = {
   ],
   touch: [
     { caps: ["Stick"], name: "Move", hint: "left thumb" },
-    { caps: ["A"], round: true, name: "Kick", hint: "feet only" },
-    { caps: ["B"], round: true, name: "Quack", hint: "hold for beak" },
+    { caps: ["Run"], name: "Sprint", hint: "hold + move" },
+    { caps: ["Deck"], name: "Control", hint: "scenes · modes · actions" },
   ],
 };
 const HINTS = {
   kb: "drag to orbit \u00b7 scroll to zoom",
   pad: "hold \u2191 mode \u00b7 hold \u2192 WBC \u00b7 RT quack \u00b7 LT wheee \u00b7 R3 chase",
-  touch: "drag to orbit \u00b7 pinch to zoom",
+  touch: "drag to orbit · pinch to zoom · open the control deck for every action",
 };
 
 const KB_CODES = TILES.kb.flatMap((t) => t.codes ?? []);
@@ -175,7 +175,7 @@ export default function TitleMenu() {
     <Box
       role="dialog"
       aria-modal="true"
-      aria-label="Microduck"
+      aria-label="Microduck - Enhanced with MicroZoo"
       sx={{
         position: "fixed",
         inset: 0,
@@ -273,7 +273,7 @@ export default function TitleMenu() {
           fontSize="clamp(3.1rem, 10vw, 5.4rem)"
           lines={[
             { text: "Microduck" },
-            { text: "Simulator", variant: "outline", scale: 0.6 },
+            { text: "Enhanced with MicroZoo", variant: "outline", scale: 0.31 },
           ]}
           sx={{ ...row(0.08) }}
         />

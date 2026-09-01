@@ -486,13 +486,15 @@ async function boot({ scene, camera, renderer }) {
     return controller.getCommand();
   }
 
-  // Keyboard-only hold-to-sprint. It deliberately does not carry over
-  // turning or commands from another source, and remains unavailable during
-  // WBC or any skill hand-off.
+  // Hold-to-sprint is available from the keyboard and the touch RUN cap. It
+  // deliberately does not carry over turning or commands from another source,
+  // and remains unavailable during WBC or any skill hand-off.
   function runForwardEligible() {
+    const touchForward = touchSource.pressed.sprint && touchSource.pressed.stick &&
+      touchSource.command[0] > 0.01;
     return controlMode === "skills" && loco === "legs" && mode === "walk" &&
       !inputLocked && !headMode && !recovery && postKickLock === 0 && !standTimer &&
-      kbSource.pressed.fwd;
+      (kbSource.pressed.fwd || touchForward);
   }
   let rollRun = null;
   let pickRun = null;
@@ -515,7 +517,7 @@ async function boot({ scene, camera, renderer }) {
       speed: runCommandSpeed,
       policyActive: runPolicyActive,
       forwardEligible: runForwardEligible(),
-      shiftHeld: kbSource.isSprinting(),
+      shiftHeld: kbSource.isSprinting() || touchSource.pressed.sprint,
     });
     runCommandSpeed = next.speed;
     runPolicyActive = next.policyActive;
@@ -614,6 +616,8 @@ async function boot({ scene, camera, renderer }) {
     // Head mode exits and its offsets DO reset here (the one place).
     headMode = false;
     padSource.headMode = false;
+    touchSource.headMode = false;
+    Object.assign(touchSource.head, { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 });
     headTarget.fill(0);
     headSmooth.fill(0);
     mujoco.mj_resetDataKeyframe(model, data, standKeyId);
@@ -1892,10 +1896,17 @@ async function boot({ scene, camera, renderer }) {
       setStore({ touchMode: touchSource.connected });
     }
     // Head mode: sticks steer the head targets (stick * HEAD_MAX, signed
-    // per joint); the EMA toward them runs in buildObs at 50 Hz. Without
-    // a pad the targets stay put (and are debug-writable via window.rl).
+    // per joint); the EMA toward them runs in buildObs at 50 Hz. The mobile
+    // head deck feeds the same slots when a touch source is active. Without
+    // either source the targets stay put (and are debug-writable via window.rl).
     if (headMode && padSource.connected) {
       const h = padSource.head;
+      headTarget[0] = HEAD_SIGNS[0] * h.neckPitch * HEAD_MAX;
+      headTarget[1] = HEAD_SIGNS[1] * h.pitch * HEAD_MAX;
+      headTarget[2] = HEAD_SIGNS[2] * h.yaw * HEAD_MAX;
+      headTarget[3] = HEAD_SIGNS[3] * h.roll * HEAD_MAX;
+    } else if (headMode && touchSource.connected) {
+      const h = touchSource.head;
       headTarget[0] = HEAD_SIGNS[0] * h.neckPitch * HEAD_MAX;
       headTarget[1] = HEAD_SIGNS[1] * h.pitch * HEAD_MAX;
       headTarget[2] = HEAD_SIGNS[2] * h.yaw * HEAD_MAX;
@@ -1974,6 +1985,8 @@ async function boot({ scene, camera, renderer }) {
     if (!headMode) return;
     headMode = false;
     padSource.headMode = false;
+    touchSource.headMode = false;
+    Object.assign(touchSource.head, { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 });
     syncButtons();
   }
 
@@ -1988,6 +2001,7 @@ async function boot({ scene, camera, renderer }) {
       return;
     headMode = true;
     padSource.headMode = true;
+    touchSource.headMode = true;
     syncButtons();
   }
 
@@ -2113,6 +2127,41 @@ async function boot({ scene, camera, renderer }) {
     requestScene: (sceneId) => { void setScene(sceneId); },
     requestControlMode: (name) => { void setControlMode(name); },
     requestWbcClip: (id) => { void setWbcClip(id); },
+    triggerAction: (action) => {
+      switch (action) {
+        case "roll": triggerRoll("touch"); break;
+        case "pick": triggerGroundPick("touch"); break;
+        case "kickLeft": triggerKick("left", "touch"); break;
+        case "kickRight": triggerKick("right", "touch"); break;
+        case "sitToggle": {
+          if (loco !== "legs") break;
+          const sitting = mode === "sitstand" && sitFlag === 1;
+          setMode(sitting ? "walk" : "sit");
+          break;
+        }
+        case "walk":
+          if (mode !== "walk" && mode !== "roll") setMode("walk");
+          break;
+        case "head": toggleHeadMode(); break;
+        case "camera": chaseCam = !chaseCam; break;
+        case "reset": resetSim(); break;
+        case "quack": quackLoud(); break;
+        case "ball": spawnBall(); break;
+        case "wheeeStart": void startWheee(); break;
+        case "wheeeStop": stopWheee(); break;
+        default: break;
+      }
+    },
+    setTouchHeadInput: ({ neckPitch = 0, pitch = 0, yaw = 0, roll = 0 } = {}) => {
+      if (!headMode || !touchSource.connected) return;
+      const clamp = (value) => Math.max(-1, Math.min(1, Number(value) || 0));
+      Object.assign(touchSource.head, {
+        neckPitch: clamp(neckPitch),
+        pitch: clamp(pitch),
+        yaw: clamp(yaw),
+        roll: clamp(roll),
+      });
+    },
     resetSim,
     spawnBall: () => spawnBall(),
     startEntrance: () => ceremony.startEntrance(),
