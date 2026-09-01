@@ -13,6 +13,7 @@ const actions = [
   ["touch-roll", "Roll"], ["touch-kick", "Kick"],
   ["touch-pick", "Pick"], ["touch-sit", "Sit"],
   ["touch-mouth", "Mouth"], ["touch-quack", "Quack"],
+  ["touch-wawa", "Wawa"],
   ["touch-head", "Head"], ["touch-pose", "Pose"],
 ];
 
@@ -43,7 +44,7 @@ export default function TouchOverlay() {
           display: modal ? "block" : "none",
           left: "50%",
           right: 0,
-          bottom: "13.5rem",
+          bottom: "16.2rem",
         },
         "& #touch-stick, & #touch-aux-stick": {
           position: "absolute",

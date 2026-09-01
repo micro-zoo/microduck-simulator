@@ -15,7 +15,7 @@
 //   Head mode   left stick = head pitch/yaw; right stick = neck pitch/roll.
 //   Pose mode   left stick y = body z; right stick = pitch/roll. This is the
 //               deployed padd mapping, including its modal velocity stop.
-//   Right deck  kick, roll, pick, mouth, quack, sit and the Head/Pose mode
+//   Right deck  kick, roll, pick, mouth, quack, wawa, sit and the Head/Pose mode
 //               buttons. Mouth is a level; quack is a press edge + level.
 //
 // The overlay DOM lives in index.html (#touch-ui); this module only wires
@@ -62,7 +62,7 @@ export class TouchSource {
   axes = { jaw: 0, orbitX: 0, orbitY: 0 };
   pressed = {
     stick: false, auxStick: false, kick: false, roll: false, pick: false,
-    mouth: false, quack: false, sit: false, head: false, pose: false,
+    mouth: false, quack: false, wawa: false, sit: false, head: false, pose: false,
   };
   // Owned by game.js, modelled after padd's Drive / Head / BodyPose enum.
   inputMode = "drive";
@@ -111,6 +111,7 @@ export class TouchSource {
     this.#bindButton("touch-pick", "pick", () => this.onAction("groundPick"));
     this.#bindButton("touch-mouth", "mouth", () => {});
     this.#bindButton("touch-quack", "quack", () => this.onAction("quack"));
+    this.#bindButton("touch-wawa", "wawa", () => this.onAction("wawa"));
     this.#bindButton("touch-sit", "sit", () => this.onAction("sitToggle"));
     this.#bindButton("touch-head", "head", () => this.onAction("touchHeadToggle"));
     this.#bindButton("touch-pose", "pose", () => this.onAction("touchPoseToggle"));

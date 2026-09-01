@@ -21,7 +21,7 @@ import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
 import { readLayoutMap, resolveKeycaps } from "./keyboard-layout.js";
 
-const HUD_CONTROL_CODES = ["KeyX", "KeyG", "KeyQ", "KeyE", "KeyR", "KeyM", "KeyC", "KeyH", "KeyP", "KeyI", "KeyJ", "KeyK", "KeyL"];
+const HUD_CONTROL_CODES = ["KeyX", "KeyG", "KeyQ", "KeyE", "KeyR", "KeyM", "KeyC", "KeyV", "KeyH", "KeyP", "KeyI", "KeyJ", "KeyK", "KeyL"];
 
 function useHudKeycaps(enabled) {
   const [keycaps, setKeycaps] = useState(() => resolveKeycaps(HUD_CONTROL_CODES, null));
@@ -501,6 +501,26 @@ function Quickbar() {
           </Box>
         </Box>
       </HudPlate>
+      <HudPlate caption="Voice">
+        <Box role="group" aria-label="Duck voices" sx={{ display: "inline-flex", alignItems: "stretch", height: "100%", gap: `${CELL_GAP}px` }}>
+          {["Quack", "Wawa"].map((label) => (
+            <Box
+              key={label}
+              component="button"
+              type="button"
+              onClick={() => gameApi.triggerAction?.(label.toLowerCase())}
+              sx={{
+                ...hudHitSx,
+                px: "0.78rem",
+                "&:hover": { color: ORANGE, background: "rgba(255, 122, 47, 0.12)" },
+                "&:active": { filter: "brightness(0.92)" },
+              }}
+            >
+              {label}
+            </Box>
+          ))}
+        </Box>
+      </HudPlate>
       {(controlMode === "wbc" || wbcLoading) && (
         <HudPlate caption="WBC Motion">
           <Box
@@ -715,6 +735,7 @@ function ControlHints() {
         { caps: [labels.KeyM], label: "Mode" },
         { caps: [labels.KeyH, labels.KeyP], label: "Head / Pose" },
         { caps: [labels.KeyC], label: "Camera" },
+        { caps: [labels.KeyV], label: "Wawa" },
         { caps: ["Space"], label: "Reset" },
       ];
   return (

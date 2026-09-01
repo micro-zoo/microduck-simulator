@@ -84,6 +84,7 @@
 //   reset         full sim reset (Space)
 //   walk          back to the walk/run mode (pad DpadUp short press)
 //   quack         chirp + jaw flap (pad RT edge, Schmitt-triggered)
+//   wawa          preloaded Wawa voice + the same jaw flap
 //
 // ── Input lock ───────────────────────────────────────────────────────────
 // setLocked(true) zeroes getCommand() - the twist gate used while the

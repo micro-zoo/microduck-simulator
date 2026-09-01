@@ -59,6 +59,7 @@ const TILES = {
     { codes: ["KeyR"], name: "Sit", hint: "feet only" },
     { codes: ["KeyG"], name: "Pick up", hint: "feet only" },
     { codes: ["KeyH", "KeyP"], name: "Head / Pose", hint: "modal control" },
+    { codes: ["KeyV"], name: "Wawa", hint: "voice + beak" },
     { codes: ["KeyC"], name: "Camera", hint: "toggle chase" },
     { caps: ["Space"], name: "Reset", hint: "fresh start" },
   ],

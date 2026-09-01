@@ -22,7 +22,8 @@ const AUX_KEYMAP = {
 
 // One-shot keys -> controller actions. Physical Q/E (A/E on AZERTY) are the
 // explicit left / right kicks, mirroring the pad's LB / RB; F alternates.
-// X launches the official roulade; R owns sit/stand and G owns ground-pick.
+// X launches the official roulade; R owns sit/stand and G owns ground-pick;
+// V plays the preloaded Wawa voice with the normal quack jaw motion.
 // These policy-changing actions are feet-only: roller mode is one complete
 // drive skill and ignores them.
 const ACTION_KEYS = {
@@ -34,6 +35,7 @@ const ACTION_KEYS = {
   KeyQ: "kickL",
   KeyE: "kickR",
   KeyF: "alternateKick",
+  KeyV: "wawa",
   KeyH: "keyboardHeadToggle",
   KeyP: "keyboardPoseToggle",
 };

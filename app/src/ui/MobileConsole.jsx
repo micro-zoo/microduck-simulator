@@ -328,6 +328,7 @@ export default function MobileConsole() {
                 ["kickLeft", "Kick left", skillsActionDisabled], ["kickRight", "Kick right", skillsActionDisabled],
                 ["sitToggle", "Sit / stand", skillsActionDisabled], ["walk", "Walk", skillsActionDisabled],
                 ["camera", "Camera", false], ["quack", "Quack", false],
+                ["wawa", "Wawa", false],
                 ["ball", "Ball", false], ["reset", "Reset", false],
               ].map(([id, label, disabled]) => (
                 <Box key={id} component="button" type="button" disabled={disabled || busy} onClick={() => action(id)} sx={panelButtonSx}>{label}</Box>

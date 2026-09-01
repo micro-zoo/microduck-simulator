@@ -35,6 +35,7 @@ test("touch mouth is a held level while quack fires only on its press edge", () 
   const oldDocument = globalThis.document;
   const mouth = makeElement();
   const quack = makeElement();
+  const wawa = makeElement();
   const actions = [];
   globalThis.window = {
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
@@ -42,7 +43,7 @@ test("touch mouth is a held level while quack fires only on its press edge", () 
   };
   globalThis.document = {
     getElementById(id) {
-      return { "touch-mouth": mouth, "touch-quack": quack }[id] ?? null;
+      return { "touch-mouth": mouth, "touch-quack": quack, "touch-wawa": wawa }[id] ?? null;
     },
   };
   try {
@@ -59,7 +60,8 @@ test("touch mouth is a held level while quack fires only on its press edge", () 
     assert.equal(source.axes.jaw, 0);
 
     quack.emit("pointerdown", 8);
-    assert.deepEqual(actions, ["quack"]);
+    wawa.emit("pointerdown", 9);
+    assert.deepEqual(actions, ["quack", "wawa"]);
     source.dispose();
   } finally {
     globalThis.window = oldWindow;

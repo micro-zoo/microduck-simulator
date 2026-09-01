@@ -1677,7 +1677,7 @@ async function boot({ scene, camera, renderer }) {
     for (const m of wallMats) m.uniforms.uFocus.value.copy(controls.target);
   }
 
-  // ── Quack: jaw + chirp ────────────────────────────────────────────────
+  // ── Quack / Wawa: jaw + voice ─────────────────────────────────────────
   // The jaw isn't a MuJoCo joint (duck.js re-creates the hinge in JS), so
   // this is purely cosmetic and can't upset the policy. Voice banks from
   // the robot runtime: each colourway gets its own bank and every quack
@@ -1689,6 +1689,14 @@ async function boot({ scene, camera, renderer }) {
   const CHIRP_TAKES = "abcdefghijkl";
   const VOICE_BANK = { classic: "duck1", charcoal: "duck2", purple: "duck3", blue: "duck4" };
   const chirpCache = new Map();
+  // This voice is not selected by colourway, so construct and load it at
+  // boot instead of on the first input edge. `preload=auto` starts the
+  // fetch/decode pipeline before the player can invoke Wawa; the same
+  // Audio instance is rewound for repeat presses without allocating again.
+  const wawaAudio = new Audio(signed("./assets/voices/wawa.mp3"));
+  wawaAudio.preload = "auto";
+  wawaAudio.volume = 0.7;
+  wawaAudio.load();
   function playChirp() {
     const bank = VOICE_BANK[currentVariant] ?? "duck1";
     const take = CHIRP_TAKES[(Math.random() * CHIRP_TAKES.length) | 0];
@@ -1705,6 +1713,13 @@ async function boot({ scene, camera, renderer }) {
   const quackLoud = () => {
     quackAt = performance.now();
     playChirp();
+    stickers?.pop("quack");
+  };
+  const wawaLoud = () => {
+    // Reuse Quack's jaw clock exactly, so only the voice differs.
+    quackAt = performance.now();
+    wawaAudio.currentTime = 0;
+    wawaAudio.play().catch(() => {});
     stickers?.pop("quack");
   };
   // Ground-pick jaw: on the robot the pick policy drives the mouth itself
@@ -2032,6 +2047,7 @@ async function boot({ scene, camera, renderer }) {
     if (mode !== "walk" && mode !== "roll") setMode("walk");
   });
   controller.on("quack", () => quackLoud());
+  controller.on("wawa", () => wawaLoud());
   controller.on("wheeeStart", () => startWheee());
   controller.on("wheeeStop", () => stopWheee());
 
@@ -2290,6 +2306,7 @@ async function boot({ scene, camera, renderer }) {
         case "camera": chaseCam = !chaseCam; break;
         case "reset": resetSim(); break;
         case "quack": quackLoud(); break;
+        case "wawa": wawaLoud(); break;
         case "ball": spawnBall(); break;
         case "wheeeStart": void startWheee(); break;
         case "wheeeStop": stopWheee(); break;
@@ -2318,7 +2335,7 @@ async function boot({ scene, camera, renderer }) {
     buildObs, cmd,
     velCmd: kbSource.command, lastAction, resetSim,
     controller, kbSource, padSource, touchSource,
-    spawnBall, triggerKick, triggerRoll, sessions, ort,
+    spawnBall, triggerKick, triggerRoll, quackLoud, wawaLoud, sessions, ort,
     get loco() { return loco; },
     get locoSwitching() { return locoSwitching; },
     toggleLoco, setLoco, ensureRollers,
