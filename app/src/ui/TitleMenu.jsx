@@ -58,6 +58,7 @@ const TILES = {
     { codes: ["KeyQ", "KeyE"], name: "Kick", hint: "feet · left / right" },
     { codes: ["KeyR"], name: "Sit", hint: "feet only" },
     { codes: ["KeyG"], name: "Pick up", hint: "feet only" },
+    { codes: ["KeyH", "KeyP"], name: "Head / Pose", hint: "modal control" },
     { codes: ["KeyC"], name: "Camera", hint: "toggle chase" },
     { caps: ["Space"], name: "Reset", hint: "fresh start" },
   ],
@@ -66,20 +67,20 @@ const TILES = {
     { caps: ["X"], name: "Roll", hint: "feet · hold to chain" },
     { caps: ["A"], name: "Pick up", hint: "feet only" },
     { caps: ["LB", "RB"], name: "Kick", hint: "feet · left / right" },
-    { caps: ["Y"], name: "Head", hint: "feet only" },
+    { caps: ["Y", "B"], name: "Head / Pose", hint: "feet only" },
     { caps: ["RS"], name: "Camera", hint: "orbit" },
     { caps: ["\u2193"], name: "Sit", hint: "feet only" },
   ],
   touch: [
     { caps: ["Stick"], name: "Move", hint: "left thumb" },
-    { caps: ["Run"], name: "Sprint", hint: "hold + move" },
-    { caps: ["Deck"], name: "Control", hint: "scenes · modes · actions" },
+    { caps: ["Head / Pose"], name: "Modes", hint: "two-stick control" },
+    { caps: ["Deck"], name: "Control", hint: "scene · mouth · actions" },
   ],
 };
 const HINTS = {
   kb: "drag to orbit \u00b7 scroll to zoom",
   pad: "hold \u2191 mode \u00b7 hold \u2192 WBC \u00b7 RT quack \u00b7 LT wheee \u00b7 R3 chase",
-  touch: "drag to orbit · pinch to zoom · open the control deck for every action",
+  touch: "drag to orbit · pinch to zoom · choose Head or Pose for two-stick control",
 };
 
 const KB_CODES = TILES.kb.flatMap((t) => t.codes ?? []);

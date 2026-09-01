@@ -2,7 +2,9 @@
 // contract). Hold-to-command movement keys plus one-shot action keys.
 //
 // e.code is the PHYSICAL key position, so one map covers QWERTY and AZERTY:
-// arrows / WASD (ZQSD) run + turn. No strafe - vy stays 0.
+// arrows / WASD (ZQSD) run + turn. No strafe - vy stays 0. In the two
+// modal operator modes, those same keys become the left-stick equivalent;
+// I/J/K/L provide the right-stick equivalent.
 
 const KEYMAP = {
   ArrowUp: "fwd", KeyW: "fwd",
@@ -12,6 +14,11 @@ const KEYMAP = {
 };
 
 const SPRINT_KEYS = new Set(["ShiftLeft", "ShiftRight"]);
+
+const AUX_KEYMAP = {
+  KeyI: "auxUp", KeyK: "auxDown",
+  KeyJ: "auxLeft", KeyL: "auxRight",
+};
 
 // One-shot keys -> controller actions. Physical Q/E (A/E on AZERTY) are the
 // explicit left / right kicks, mirroring the pad's LB / RB; F alternates.
@@ -27,6 +34,8 @@ const ACTION_KEYS = {
   KeyQ: "kickL",
   KeyE: "kickR",
   KeyF: "alternateKick",
+  KeyH: "keyboardHeadToggle",
+  KeyP: "keyboardPoseToggle",
 };
 
 export class KeyboardSource {
@@ -34,7 +43,10 @@ export class KeyboardSource {
   connected = true; // a keyboard is always assumed present
   command = new Float32Array(3); // [vx, 0, wz], scaled to velocity limits
   axes = { jaw: 0, orbitX: 0, orbitY: 0 }; // keyboard drives none of these
-  pressed = { fwd: false, back: false, turnl: false, turnr: false, sprint: false };
+  pressed = {
+    fwd: false, back: false, turnl: false, turnr: false, sprint: false,
+    auxUp: false, auxDown: false, auxLeft: false, auxRight: false,
+  };
   onAction = () => {}; // assigned by the Controller at registration
 
   #held = new Set();
@@ -70,6 +82,13 @@ export class KeyboardSource {
         this.onAction(action);
         return;
       }
+      const aux = AUX_KEYMAP[e.code];
+      if (aux) {
+        e.preventDefault();
+        this.#held.add(aux);
+        this.#refresh();
+        return;
+      }
       const move = KEYMAP[e.code];
       if (!move) return;
       e.preventDefault();
@@ -80,6 +99,12 @@ export class KeyboardSource {
       if (SPRINT_KEYS.has(e.code)) {
         this.#sprintKeys.delete(e.code);
         this.pressed.sprint = this.#sprintKeys.size > 0;
+        return;
+      }
+      const aux = AUX_KEYMAP[e.code];
+      if (aux) {
+        this.#held.delete(aux);
+        this.#refresh();
         return;
       }
       const move = KEYMAP[e.code];
@@ -107,7 +132,7 @@ export class KeyboardSource {
 
   // Claims twist authority while any movement key is held.
   isActive() {
-    return this.#held.size > 0;
+    return this.pressed.fwd || this.pressed.back || this.pressed.turnl || this.pressed.turnr;
   }
 
   // Sprint is a modifier, not a movement source: Shift alone must not take
@@ -137,5 +162,9 @@ export class KeyboardSource {
     this.pressed.back = held.has("back");
     this.pressed.turnl = held.has("turnl");
     this.pressed.turnr = held.has("turnr");
+    this.pressed.auxUp = held.has("auxUp");
+    this.pressed.auxDown = held.has("auxDown");
+    this.pressed.auxLeft = held.has("auxLeft");
+    this.pressed.auxRight = held.has("auxRight");
   }
 }

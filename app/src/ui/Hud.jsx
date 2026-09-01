@@ -21,7 +21,7 @@ import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
 import { readLayoutMap, resolveKeycaps } from "./keyboard-layout.js";
 
-const HUD_CONTROL_CODES = ["KeyX", "KeyG", "KeyQ", "KeyE", "KeyR", "KeyM", "KeyC"];
+const HUD_CONTROL_CODES = ["KeyX", "KeyG", "KeyQ", "KeyE", "KeyR", "KeyM", "KeyC", "KeyH", "KeyP", "KeyI", "KeyJ", "KeyK", "KeyL"];
 
 function useHudKeycaps(enabled) {
   const [keycaps, setKeycaps] = useState(() => resolveKeycaps(HUD_CONTROL_CODES, null));
@@ -276,6 +276,8 @@ function Quickbar() {
   const wbcLoading = useGame((s) => s.wbcLoading);
   const wbcClip = useGame((s) => s.wbcClip);
   const wbcClips = useGame((s) => s.wbcClips);
+  const keyboardInputMode = useGame((s) => s.keyboardInputMode);
+  const mouthOpen = useGame((s) => s.mouthOpen);
   const selectedControl = wbcLoading ? "wbc" : controlMode;
   return (
     <Box
@@ -451,6 +453,54 @@ function Quickbar() {
           })}
         </Box>
       </HudPlate>
+      <HudPlate caption="Input">
+        <Box role="group" aria-label="Keyboard input mode" sx={{ display: "inline-flex", alignItems: "stretch", height: "100%", gap: `${CELL_GAP}px` }}>
+          {[
+            { name: "drive", label: "Drive" },
+            { name: "head", label: "Head" },
+            { name: "pose", label: "Pose" },
+          ].map(({ name, label }) => {
+            const selected = keyboardInputMode === name;
+            return (
+              <Box
+                key={name}
+                component="button"
+                type="button"
+                aria-pressed={selected}
+                onClick={() => gameApi.setKeyboardInputMode?.(name)}
+                sx={{
+                  ...hudHitSx,
+                  px: "0.76rem",
+                  background: selected ? ORANGE : "transparent",
+                  color: selected ? COMIC_INK : "rgba(250, 248, 242, 0.72)",
+                  "&:hover": { color: selected ? COMIC_INK : CREAM, background: selected ? ORANGE : "rgba(255, 122, 47, 0.12)" },
+                  "&:active": { filter: "brightness(0.92)" },
+                }}
+              >
+                {label}
+              </Box>
+            );
+          })}
+        </Box>
+      </HudPlate>
+      <HudPlate caption="Mouth">
+        <Box sx={{ display: "inline-flex", alignItems: "center", width: "8.3rem", gap: "0.48rem", px: "0.3rem" }}>
+          <Box
+            component="input"
+            type="range"
+            aria-label="Mouth opening"
+            min="0"
+            max="1"
+            step="0.01"
+            value={mouthOpen}
+            onChange={(event) => gameApi.setMouthOpen?.(event.target.value)}
+            sx={{ flex: 1, minWidth: 0, accentColor: ORANGE, cursor: "pointer" }}
+          />
+          <Box sx={{ fontFamily: MONO, fontSize: "0.56rem", color: ORANGE, fontVariantNumeric: "tabular-nums" }}>
+            {Math.round(mouthOpen * 100)}%
+          </Box>
+        </Box>
+      </HudPlate>
       {(controlMode === "wbc" || wbcLoading) && (
         <HudPlate caption="WBC Motion">
           <Box
@@ -609,9 +659,27 @@ const keyCapSx = {
 function ControlHints() {
   const padConnected = useGame((s) => s.padConnected);
   const loco = useGame((s) => s.loco);
+  const keyboardInputMode = useGame((s) => s.keyboardInputMode);
   const { labels } = useHudKeycaps(!padConnected);
   const rollers = loco === "rollers";
-  const hints = rollers
+  const keyboardModalHints = keyboardInputMode === "head"
+    ? [
+        { caps: [labels.KeyH], label: "Drive" },
+        { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Head" },
+        { caps: [labels.KeyI, labels.KeyK], label: "Neck" },
+        { caps: [labels.KeyJ, labels.KeyL], label: "Tilt" },
+        { caps: ["Space"], label: "Reset" },
+      ]
+    : keyboardInputMode === "pose"
+    ? [
+        { caps: [labels.KeyP], label: "Drive" },
+        { caps: ["↑↓", `${labels.KeyW} / ${labels.KeyS}`], label: "Height" },
+        { caps: [labels.KeyI, labels.KeyK], label: "Pitch" },
+        { caps: [labels.KeyJ, labels.KeyL], label: "Roll" },
+        { caps: ["Space"], label: "Reset" },
+      ]
+    : null;
+  const hints = !padConnected && keyboardModalHints ? keyboardModalHints : rollers
     ? padConnected
       ? [
           { caps: ["LS"], label: "Drive" },
@@ -631,6 +699,7 @@ function ControlHints() {
         { caps: ["X"], label: "Roll" },
         { caps: ["A"], label: "Pick" },
         { caps: ["LB", "RB"], label: "Kick" },
+        { caps: ["Y", "B"], label: "Head / Pose" },
         { caps: ["↓"], label: "Sit" },
         { caps: ["↑"], label: "Mode" },
         { caps: ["→"], label: "WBC" },
@@ -644,6 +713,7 @@ function ControlHints() {
         { caps: [labels.KeyQ, labels.KeyE], label: "Kick" },
         { caps: [labels.KeyR], label: "Sit" },
         { caps: [labels.KeyM], label: "Mode" },
+        { caps: [labels.KeyH, labels.KeyP], label: "Head / Pose" },
         { caps: [labels.KeyC], label: "Camera" },
         { caps: ["Space"], label: "Reset" },
       ];

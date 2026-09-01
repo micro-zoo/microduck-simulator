@@ -14,6 +14,8 @@
 //                pitch/head roll (reported in `head`, deflections in
 //                [-1, 1], up/left positive). The right stick stops
 //                orbiting the camera for the duration.
+//   B            BODY POSE mode toggle. Left stick raises/crouches; right
+//                stick pitches/rolls. Velocity and camera orbit are parked.
 //   RB / LB      right / left kick (feet only)
 //   DpadDown     sit <-> stand (feet only)
 //   DpadRight    hold ~1 s to toggle the optional WBC stack
@@ -40,7 +42,7 @@ const PAD_ALPHA = 0.12; // EMA smoothing toward the stick target
 const dz = (v) => (Math.abs(v) < PAD_DEADZONE ? 0 : v);
 
 // Standard-mapping button indices.
-const BTN_A = 0, BTN_X = 2, BTN_Y = 3, BTN_LB = 4, BTN_RB = 5, BTN_LT = 6, BTN_RT = 7;
+const BTN_A = 0, BTN_B = 1, BTN_X = 2, BTN_Y = 3, BTN_LB = 4, BTN_RB = 5, BTN_LT = 6, BTN_RT = 7;
 const BTN_R3 = 11, BTN_DPAD_UP = 12, BTN_DPAD_DOWN = 13, BTN_DPAD_RIGHT = 15;
 
 const DPAD_UP_HOLD_MS = 1000; // hold-to-switch-loco duration
@@ -54,9 +56,11 @@ export class GamepadSource {
   // Head-mode routing flag, owned by the game (mode state machine lives
   // there); while true the sticks fill `head` instead of command/orbit.
   headMode = false;
+  poseMode = false;
   head = { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 }; // stick deflections
+  body = { z: 0, roll: 0, pitch: 0 };
   pressed = {
-    a: false, x: false, y: false, rb: false, lb: false, r3: false,
+    a: false, b: false, x: false, y: false, rb: false, lb: false, r3: false,
     dpadDown: false, dpadUp: false, dpadRight: false,
   };
   onAction = () => {}; // assigned by the Controller at registration
@@ -101,6 +105,7 @@ export class GamepadSource {
       this.axes.orbitY = 0;
       this.axes.ride = 0;
       this.#zeroHead();
+      this.#zeroBody();
       // A pad yanked mid-ride must not leave the wheee looping forever.
       if (this.#ltRide) {
         this.#ltRide = false;
@@ -126,6 +131,16 @@ export class GamepadSource {
       this.head.roll = -rx;
       this.axes.orbitX = 0;
       this.axes.orbitY = 0;
+      this.#zeroBody();
+    } else if (this.poseMode) {
+      target = [0, 0, 0];
+      // browser sticks report up as -1; source contract is up/left +1.
+      this.body.z = -ly;
+      this.body.roll = rx;
+      this.body.pitch = -ry;
+      this.#zeroHead();
+      this.axes.orbitX = 0;
+      this.axes.orbitY = 0;
     } else {
       // Left stick only: vertical = forward/back, horizontal = turn.
       // (No strafe; the right stick doesn't drive movement.)
@@ -136,6 +151,7 @@ export class GamepadSource {
         -lx * limA,
       ];
       this.#zeroHead();
+      this.#zeroBody();
       // Right stick: raw (deadzoned) orbit rate. Reported every frame -
       // the downstream camera step needs the zeros too so a released
       // stick coasts to a stop.
@@ -147,7 +163,7 @@ export class GamepadSource {
     // rest (then the keyboard takes over again through the Controller's
     // arbitration). In head mode the sticks belong to the head, so they
     // never claim the twist.
-    const stickInput = !this.headMode && (lx !== 0 || ly !== 0);
+    const stickInput = !this.headMode && !this.poseMode && (lx !== 0 || ly !== 0);
     if (stickInput) this.#active = true;
     else if (
       this.#active &&
@@ -175,6 +191,10 @@ export class GamepadSource {
     const y = !!gp.buttons[BTN_Y]?.pressed;
     if (y && !prev.y) this.onAction("headToggle");
     prev.y = y;
+
+    const b = !!gp.buttons[BTN_B]?.pressed;
+    if (b && !prev.b) this.onAction("bodyPoseToggle");
+    prev.b = b;
 
     const rb = !!gp.buttons[BTN_RB]?.pressed;
     if (rb && !prev.rb) this.onAction("kickR");
@@ -254,5 +274,11 @@ export class GamepadSource {
     this.head.pitch = 0;
     this.head.yaw = 0;
     this.head.roll = 0;
+  }
+
+  #zeroBody() {
+    this.body.z = 0;
+    this.body.roll = 0;
+    this.body.pitch = 0;
   }
 }

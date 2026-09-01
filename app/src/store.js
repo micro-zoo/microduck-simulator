@@ -41,6 +41,11 @@ export const useGame = create(
     variant: "classic",
     padConnected: false,
     touchMode: false,
+    // Deployed padd parity: Drive, Head, or Body Pose. Touch only; the
+    // controller core owns the source of truth and mirrors it here for UI.
+    touchInputMode: "drive",
+    keyboardInputMode: "drive",
+    mouthOpen: 0,
     ballActive: false,
     // Throttled telemetry block (4 Hz), bottom-right OSD
     telemetry: { fps: 0, ctrlHz: 0, speed: 0, odo: 0, peers: 0 },

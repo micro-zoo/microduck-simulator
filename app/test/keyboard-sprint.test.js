@@ -47,3 +47,23 @@ test("Shift is a forward-sprint modifier without becoming a movement source", ()
     globalThis.window = oldWindow;
   }
 });
+
+test("IJKL retain auxiliary modal input without taking drive authority", () => {
+  const oldWindow = globalThis.window;
+  const fakeWindow = makeWindow();
+  globalThis.window = fakeWindow;
+  try {
+    const source = new KeyboardSource({ getVelocityLimits: () => [0.25, -0.2, 1.0] });
+    source.init();
+
+    assert.equal(fakeWindow.emit("keydown", "KeyI"), true);
+    assert.equal(source.pressed.auxUp, true);
+    assert.equal(source.isActive(), false);
+    assert.equal(source.command[0], 0);
+    fakeWindow.emit("keyup", "KeyI");
+    assert.equal(source.pressed.auxUp, false);
+    source.dispose();
+  } finally {
+    globalThis.window = oldWindow;
+  }
+});

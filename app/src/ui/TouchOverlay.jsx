@@ -1,52 +1,63 @@
-// Touch overlay: a floating left stick, a hold-to-run cap, and the two
-// immediate actions that benefit from arcade latency. The full touch control
-// deck (scene, modes, all actions) lives in MobileConsole.
+// Touch overlay: the left floating stick is always the drive/primary stick.
+// Head and body-pose expose the right stick on demand, mirroring padd's
+// two-stick modes. The right action deck owns only immediate, thumb-friendly
+// controls; scenes and configuration stay in MobileConsole.
 //
-// The DOM here is deliberately plain and keyed by ids: controls/touch.js
-// binds pointer events to #touch-zone / #touch-stick / #touch-sprint /
-// #touch-a / #touch-b
-// at controller init and toggles the .live/.down classes itself. React
-// only owns the wrapper's visibility, so it never fights those mutations -
-// which is also why this component must stay mounted at all times.
+// controls/touch.js binds pointer events directly to these stable ids. React
+// intentionally owns visibility and mode only, never the live nub transforms.
 import Box from "@mui/material/Box";
 import { useGame } from "../store.js";
 import { INK, ORANGE } from "../theme.js";
+
+const actions = [
+  ["touch-roll", "Roll"], ["touch-kick", "Kick"],
+  ["touch-pick", "Pick"], ["touch-sit", "Sit"],
+  ["touch-mouth", "Mouth"], ["touch-quack", "Quack"],
+  ["touch-head", "Head"], ["touch-pose", "Pose"],
+];
 
 export default function TouchOverlay() {
   const touchMode = useGame((s) => s.touchMode);
   const entered = useGame((s) => s.entered);
   const menuOpen = useGame((s) => s.menuOpen);
-  const loco = useGame((s) => s.loco);
+  const inputMode = useGame((s) => s.touchInputMode);
   const visible = touchMode && entered && !menuOpen;
+  const modal = inputMode !== "drive";
 
   return (
     <Box
       id="touch-ui"
       sx={{
         display: visible ? "block" : "none",
-        // Floating-stick zone: sits BELOW the back button in z so its tap
-        // still lands; the resting stick inside marks the zone when idle.
-        "& #touch-zone": {
+        "& #touch-zone, & #touch-aux-zone": {
           position: "fixed",
-          left: 0,
-          right: "50%",
           top: "30%",
           bottom: 0,
           zIndex: 9,
           touchAction: "none",
         },
-        "& #touch-stick": {
+        "& #touch-zone": { left: 0, right: "50%" },
+        // Keep the right hand's stick clear of the action deck and let it
+        // disappear entirely in Drive, where the same screen space is free.
+        "& #touch-aux-zone": {
+          display: modal ? "block" : "none",
+          left: "50%",
+          right: 0,
+          bottom: "13.5rem",
+        },
+        "& #touch-stick, & #touch-aux-stick": {
           position: "absolute",
-          left: "1.3rem",
           bottom: "2rem",
           width: "8.2rem",
           height: "8.2rem",
           borderRadius: "50%",
           border: "1px solid rgba(255, 255, 255, 0.18)",
           background: "rgba(8, 8, 12, 0.4)",
-          pointerEvents: "none", // the zone owns the pointer
+          pointerEvents: "none",
         },
-        "& #touch-stick .nub": {
+        "& #touch-stick": { left: "1.3rem" },
+        "& #touch-aux-stick": { right: "1.3rem" },
+        "& #touch-stick .nub, & #touch-aux-stick .nub": {
           position: "absolute",
           left: "50%",
           top: "50%",
@@ -58,123 +69,61 @@ export default function TouchOverlay() {
           background: "rgba(255, 255, 255, 0.14)",
           pointerEvents: "none",
         },
-        "& #touch-stick.live": { borderColor: "rgba(255, 122, 47, 0.55)" },
-        "& #touch-stick.live .nub": {
-          background: "rgba(255, 122, 47, 0.45)",
-          borderColor: ORANGE,
+        "& #touch-stick.live, & #touch-aux-stick.live": { borderColor: "rgba(255, 122, 47, 0.55)" },
+        "& #touch-stick.live .nub, & #touch-aux-stick.live .nub": {
+          background: "rgba(255, 122, 47, 0.45)", borderColor: ORANGE,
         },
         "& #touch-btns": {
           position: "fixed",
-          right: "1.3rem",
-          bottom: "2.2rem",
+          right: "1rem",
+          bottom: "1rem",
           zIndex: 12,
-          width: "9.4rem",
-          height: "8.4rem",
-        },
-        "& #touch-sprint-wrap": {
-          position: "fixed",
-          left: "1.3rem",
-          bottom: "min(10.9rem, 34dvh)",
-          zIndex: 13,
-          display: loco === "rollers" ? "none" : "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "0.28rem",
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          width: "11.2rem",
+          gap: "0.42rem",
           pointerEvents: "auto",
         },
-        "& #touch-sprint": {
+        "& #touch-btns button": {
           appearance: "none",
-          minWidth: "4.6rem",
-          height: "2.7rem",
-          px: "0.75rem",
-          border: "2px solid rgba(255, 255, 255, 0.64)",
+          minHeight: "2.65rem",
+          padding: "0.35rem 0.45rem",
           borderRadius: 0,
-          background: "rgba(8, 8, 12, 0.72)",
-          color: "rgba(255, 255, 255, 0.92)",
-          boxShadow: "2px 2px 0 rgba(0, 0, 0, 0.7)",
-          font: "inherit",
-          fontSize: "0.78rem",
-          fontWeight: 800,
-          letterSpacing: "0.11em",
+          border: "1px solid rgba(255, 255, 255, 0.28)",
+          background: "rgba(8, 8, 12, 0.68)",
+          boxShadow: "2px 2px 0 rgba(0, 0, 0, 0.62)",
+          color: "rgba(255, 255, 255, 0.88)",
+          fontFamily: "Anton, Impact, sans-serif",
+          fontSize: "0.76rem",
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
           cursor: "pointer",
           touchAction: "none",
           userSelect: "none",
           WebkitUserSelect: "none",
           WebkitTapHighlightColor: "transparent",
           transition: "transform 0.12s ease, background 0.12s ease, color 0.12s ease",
-          "&:active, &.down": {
-            transform: "scale(0.96)",
-            background: ORANGE,
-            borderColor: ORANGE,
-            color: INK,
-          },
+          "&:active, &.down": { transform: "scale(0.96)", background: ORANGE, borderColor: ORANGE, color: INK },
+          "&[aria-pressed='true']": { background: ORANGE, borderColor: ORANGE, color: INK },
           "&:focus-visible": { outline: "2px dashed #fff", outlineOffset: 3 },
           "@media (prefers-reduced-motion: reduce)": { transition: "none" },
         },
-        "& #touch-sprint-wrap span": {
-          fontSize: "0.55rem",
-          fontWeight: 600,
-          letterSpacing: "0.14em",
-          textTransform: "uppercase",
-          color: "rgba(255, 255, 255, 0.45)",
-        },
-        "& .capwrap": {
-          position: "absolute",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "0.3rem",
-        },
-        "& .cap-a": { right: 0, top: 0, display: loco === "rollers" ? "none" : "flex" },
-        "& .cap-b": { left: 0, bottom: 0 },
-        "& #touch-btns button": {
-          appearance: "none",
-          width: "4.2rem",
-          height: "4.2rem",
-          borderRadius: "50%",
-          border: "1px solid rgba(255, 255, 255, 0.22)",
-          background: "rgba(8, 8, 12, 0.5)",
-          color: "rgba(255, 255, 255, 0.85)",
-          font: "inherit",
-          fontSize: "1.3rem",
-          fontWeight: 700,
-          cursor: "pointer",
-          touchAction: "none",
-          userSelect: "none",
-          WebkitUserSelect: "none",
-        },
-        "& #touch-btns button.down": {
-          background: ORANGE,
-          borderColor: ORANGE,
-          color: INK,
-        },
-        "& .capwrap span": {
-          fontSize: "0.55rem",
-          fontWeight: 600,
-          letterSpacing: "0.18em",
-          textTransform: "uppercase",
-          color: "rgba(255, 255, 255, 0.45)",
-        },
       }}
     >
-      <div id="touch-zone">
-        <div id="touch-stick">
-          <div className="nub" />
-        </div>
-      </div>
-      <div id="touch-sprint-wrap">
-        <button type="button" id="touch-sprint" aria-label="Hold to run">RUN</button>
-        <span>Hold + move</span>
-      </div>
+      <div id="touch-zone"><div id="touch-stick"><div className="nub" /></div></div>
+      <div id="touch-aux-zone"><div id="touch-aux-stick"><div className="nub" /></div></div>
       <div id="touch-btns">
-        <div className="capwrap cap-a">
-          <button type="button" id="touch-a" aria-label="Kick">A</button>
-          <span>Kick</span>
-        </div>
-        <div className="capwrap cap-b">
-          <button type="button" id="touch-b" aria-label="Quack">B</button>
-          <span>Quack</span>
-        </div>
+        {actions.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            id={id}
+            aria-label={label}
+            aria-pressed={(id === "touch-head" && inputMode === "head") || (id === "touch-pose" && inputMode === "pose")}
+          >
+            {label}
+          </button>
+        ))}
       </div>
     </Box>
   );

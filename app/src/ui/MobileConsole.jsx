@@ -96,6 +96,8 @@ export default function MobileConsole() {
   const wbcClip = useGame((s) => s.wbcClip);
   const wbcClips = useGame((s) => s.wbcClips);
   const modeLabel = useGame((s) => s.modeLabel);
+  const touchInputMode = useGame((s) => s.touchInputMode);
+  const mouthOpen = useGame((s) => s.mouthOpen);
   const [open, setOpen] = useState(false);
   const visible = touchMode && entered && !menuOpen;
 
@@ -119,18 +121,8 @@ export default function MobileConsole() {
     : null;
   const action = (name) => gameApi.triggerAction?.(name);
   const skillsOnly = controlMode !== "skills" || loco !== "legs";
-  const headMode = modeLabel === "Head";
-  const skillsActionDisabled = skillsOnly || headMode;
-  const headHold = (input) => ({
-    onPointerDown: (event) => {
-      event.preventDefault();
-      gameApi.setTouchHeadInput?.(input);
-      try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
-    },
-    onPointerUp: () => gameApi.setTouchHeadInput?.(),
-    onPointerCancel: () => gameApi.setTouchHeadInput?.(),
-    onLostPointerCapture: () => gameApi.setTouchHeadInput?.(),
-  });
+  const modalInput = touchInputMode !== "drive";
+  const skillsActionDisabled = skillsOnly || modalInput;
 
   return (
     <>
@@ -296,13 +288,45 @@ export default function MobileConsole() {
             ) : null}
           </DeckSection>
 
-          <DeckSection title={skillsOnly ? "Actions · switch to leg skills to enable" : headMode ? "Actions · exit head pose before skills" : "Actions"}>
+          <DeckSection title="Touch input">
+            <Segment
+              label="Touch control mode"
+              value={touchInputMode}
+              onChange={(next) => gameApi.setTouchInputMode?.(next)}
+              items={[{ value: "drive", label: "Drive" }, { value: "head", label: "Head" }, { value: "pose", label: "Pose" }]}
+            />
+            <Box sx={{ fontFamily: MONO, fontSize: "0.57rem", letterSpacing: "0.08em", lineHeight: 1.55, color: "rgba(250, 248, 242, 0.52)", textTransform: "uppercase" }}>
+              {touchInputMode === "drive"
+                ? "Drive · left stick controls speed and turn"
+                : touchInputMode === "head"
+                ? "Head · left: pitch / yaw · right: neck / roll · speed parked"
+                : "Pose · left: raise / crouch · right: pitch / roll · speed parked"}
+            </Box>
+          </DeckSection>
+
+          <DeckSection title="Mouth">
+            <Box sx={{ display: "flex", alignItems: "center", gap: "0.7rem" }}>
+              <Box
+                component="input"
+                type="range"
+                aria-label="Mouth opening"
+                min="0"
+                max="1"
+                step="0.01"
+                value={mouthOpen}
+                onChange={(event) => gameApi.setMouthOpen?.(event.target.value)}
+                sx={{ flex: 1, minWidth: 0, accentColor: ORANGE }}
+              />
+              <Box sx={{ width: "2.8rem", fontFamily: MONO, fontSize: "0.62rem", color: ORANGE, textAlign: "right" }}>{Math.round(mouthOpen * 100)}%</Box>
+            </Box>
+          </DeckSection>
+
+          <DeckSection title={skillsOnly ? "Actions · switch to leg skills to enable" : modalInput ? "Actions · return to drive to enable" : "Actions"}>
             <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.42rem" }}>
               {[
                 ["roll", "Roll", skillsActionDisabled], ["pick", "Pick", skillsActionDisabled],
                 ["kickLeft", "Kick left", skillsActionDisabled], ["kickRight", "Kick right", skillsActionDisabled],
                 ["sitToggle", "Sit / stand", skillsActionDisabled], ["walk", "Walk", skillsActionDisabled],
-                ["head", headMode ? "Exit head" : "Head pose", skillsOnly],
                 ["camera", "Camera", false], ["quack", "Quack", false],
                 ["ball", "Ball", false], ["reset", "Reset", false],
               ].map(([id, label, disabled]) => (
@@ -323,24 +347,8 @@ export default function MobileConsole() {
             </Box>
           </DeckSection>
 
-          {headMode ? (
-            <DeckSection title="Head pose · hold a direction">
-              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.42rem" }}>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ pitch: 1 })}>Look up</Box>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ neckPitch: 1 })}>Neck up</Box>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ roll: 1 })}>Tilt left</Box>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ yaw: 1 })}>Look left</Box>
-                <Box component="button" type="button" onClick={() => gameApi.setTouchHeadInput?.()} sx={panelButtonSx}>Centre</Box>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ yaw: -1 })}>Look right</Box>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ pitch: -1 })}>Look down</Box>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ neckPitch: -1 })}>Neck down</Box>
-                <Box component="button" type="button" sx={panelButtonSx} {...headHold({ roll: -1 })}>Tilt right</Box>
-              </Box>
-            </DeckSection>
-          ) : null}
-
           <Box sx={{ pt: "0.1rem", fontFamily: MONO, fontSize: "0.57rem", letterSpacing: "0.1em", lineHeight: 1.55, color: "rgba(250, 248, 242, 0.48)", textTransform: "uppercase" }}>
-            Left thumb: move · hold RUN + forward to ramp toward 1.0 m/s · drag scene to orbit · pinch to zoom
+            Drive: left thumb to move · Head / pose: two floating sticks · drag scene to orbit · pinch to zoom
           </Box>
         </Box>
       ) : null}

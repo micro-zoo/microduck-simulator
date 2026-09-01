@@ -422,7 +422,7 @@ async function boot({ scene, camera, renderer }) {
       const qpos = data.qpos;
       return [qpos[0], qpos[1], duckYaw(qpos)];
     },
-    isSuppressed: () => controlMode !== "skills" || inputLocked || headMode || mode !== "walk" || !!grab,
+    isSuppressed: () => controlMode !== "skills" || inputLocked || operatorInputActive() || mode !== "walk" || !!grab,
     getManualOverride: () => padSource.isActive() || touchSource.isActive() || kbSource.isActive(),
   });
   // Keyboard, pad and touch preempt by priority; waypoint is the fallback.
@@ -460,8 +460,17 @@ async function boot({ scene, camera, renderer }) {
   // EMA-smoothed at 50 Hz in buildObs like the runtime (alpha 0.2).
   // Offsets PERSIST when leaving head mode; only a sim reset zeroes them.
   let headMode = false;
+  let padPoseMode = false;
+  // Touch and keyboard share the deployment client's modal semantics but
+  // keep their own source state. Entering one always clears the others, so
+  // only one physical operator surface owns the continuous head/body slots.
+  let touchInputMode = "drive"; // "drive" | "head" | "pose"
+  let keyboardInputMode = "drive"; // "drive" | "head" | "pose"
   const HEAD_MAX = 2.5; // rad at full deflection (runtime head_max)
   const HEAD_ALPHA = 0.2;
+  const BODY_Z_UP = 0.010;
+  const BODY_Z_DOWN = 0.025;
+  const BODY_MAX_ANGLE = 0.2618;
   // Stick-to-joint polarity (deflections come in up/left = +1), tuned
   // visually in the sim: cmd + means UP for neck_pitch but DOWN for
   // head_pitch, LEFT for head_yaw but RIGHT-tilt for head_roll - hence
@@ -470,6 +479,11 @@ async function boot({ scene, camera, renderer }) {
   const HEAD_SIGNS = new Float32Array([1, -1, 1, -1]);
   const headTarget = new Float32Array(4);
   const headSmooth = new Float32Array(4);
+  // [z, roll, pitch] maps to cmd[9..11]. cmd[7..8] and cmd[12] are
+  // intentionally held at zero, exactly like duck-control's command block.
+  const bodyTarget = new Float32Array(3);
+  const bodySmooth = new Float32Array(3);
+  const operatorInputActive = () => headMode || padPoseMode || touchInputMode !== "drive" || keyboardInputMode !== "drive";
   // Local-only kickable ball: false while parked at the keyframe spot
   // (mesh hidden), true once popped in front of the duck.
   let ballActive = false;
@@ -480,21 +494,19 @@ async function boot({ scene, camera, renderer }) {
   // sticks drive the head.
   const ZERO_CMD = new Float32Array(3);
   function effectiveCmd() {
-    if (inputLocked || headMode || mode === "roll" ||
+    if (inputLocked || operatorInputActive() || mode === "roll" ||
         mode === "groundpick" || isKick() || postKickLock > 0 || recovery)
       return ZERO_CMD;
     return controller.getCommand();
   }
 
-  // Hold-to-sprint is available from the keyboard and the touch RUN cap. It
-  // deliberately does not carry over turning or commands from another source,
-  // and remains unavailable during WBC or any skill hand-off.
+  // Hold-to-sprint is keyboard-only. Touch is deliberately limited to the
+  // deployed drive/head/body-pose surface; the experimental RUN policy stays
+  // unavailable in the public UI.
   function runForwardEligible() {
-    const touchForward = touchSource.pressed.sprint && touchSource.pressed.stick &&
-      touchSource.command[0] > 0.01;
     return controlMode === "skills" && loco === "legs" && mode === "walk" &&
-      !inputLocked && !headMode && !recovery && postKickLock === 0 && !standTimer &&
-      (kbSource.pressed.fwd || touchForward);
+      !inputLocked && !operatorInputActive() && !recovery && postKickLock === 0 && !standTimer &&
+      kbSource.pressed.fwd;
   }
   let rollRun = null;
   let pickRun = null;
@@ -517,7 +529,7 @@ async function boot({ scene, camera, renderer }) {
       speed: runCommandSpeed,
       policyActive: runPolicyActive,
       forwardEligible: runForwardEligible(),
-      shiftHeld: kbSource.isSprinting() || touchSource.pressed.sprint,
+      shiftHeld: kbSource.isSprinting(),
     });
     runCommandSpeed = next.speed;
     runPolicyActive = next.policyActive;
@@ -615,11 +627,19 @@ async function boot({ scene, camera, renderer }) {
     wbcFrame = 0;
     // Head mode exits and its offsets DO reset here (the one place).
     headMode = false;
+    padPoseMode = false;
     padSource.headMode = false;
-    touchSource.headMode = false;
+    padSource.poseMode = false;
+    touchInputMode = "drive";
+    keyboardInputMode = "drive";
+    touchSource.inputMode = "drive";
     Object.assign(touchSource.head, { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 });
+    Object.assign(touchSource.body, { z: 0, roll: 0, pitch: 0 });
     headTarget.fill(0);
     headSmooth.fill(0);
+    bodyTarget.fill(0);
+    bodySmooth.fill(0);
+    setStore({ touchInputMode: "drive", keyboardInputMode: "drive" });
     mujoco.mj_resetDataKeyframe(model, data, standKeyId);
     const spawn = SCENES[activeScene].spawn;
     data.qpos[0] = spawn[0];
@@ -743,6 +763,13 @@ async function boot({ scene, camera, renderer }) {
     const gpZero = mode === "groundpick" || recovery !== null;
     cmd[3] = gpZero ? 0 : headSmooth[0]; cmd[4] = gpZero ? 0 : headSmooth[1];
     cmd[5] = gpZero ? 0 : headSmooth[2]; cmd[6] = gpZero ? 0 : headSmooth[3];
+    // Body pose is the other deployed continuous command. Unlike head
+    // offsets it only lives while its mode is active; exit clears both
+    // target and EMA so the robot returns to nominal immediately.
+    for (let b = 0; b < 3; b++) bodySmooth[b] += HEAD_ALPHA * (bodyTarget[b] - bodySmooth[b]);
+    cmd[9] = gpZero ? 0 : bodySmooth[0];
+    cmd[10] = gpZero ? 0 : bodySmooth[1];
+    cmd[11] = gpZero ? 0 : bodySmooth[2];
     for (let c = 0; c < CMD_SIZE; c++) obs[i++] = cmd[c];
     return obs;
   }
@@ -1185,6 +1212,7 @@ async function boot({ scene, camera, renderer }) {
 
   async function setControlMode(next) {
     if (next !== "skills" && next !== "wbc") return;
+    if (next === "wbc") clearOperatorInputModes();
     const request = ++wbcRequest;
     if (next === "skills") {
       const changed = controlMode !== "skills";
@@ -1422,7 +1450,7 @@ async function boot({ scene, camera, renderer }) {
     // Head mode: the camera freezes where it is. It keeps looking at the
     // duck for free - syncRig translates camera and target by the same
     // delta, and the duck isn't walking anyway (twist zeroed).
-    if (headMode) return;
+    if (operatorInputActive()) return;
     if (!chaseCam) return;
     const qpos = data.qpos;
     let rawYaw;
@@ -1587,7 +1615,7 @@ async function boot({ scene, camera, renderer }) {
     if (now - grabHoverAt < 80) return;
     grabHoverAt = now;
     grabRayFrom(e);
-    const clickable = mode === "walk" && !headMode;
+    const clickable = mode === "walk" && !operatorInputActive();
     renderer.domElement.style.cursor = grabPick() ? "grab" : (clickable ? "crosshair" : "");
   });
   window.addEventListener("pointerup", endGrab);
@@ -1657,6 +1685,7 @@ async function boot({ scene, camera, renderer }) {
   const QUACK_MS = 480;
   let quackAt = -Infinity;
   let padJaw = 0;
+  let manualJaw = 0;
   const CHIRP_TAKES = "abcdefghijkl";
   const VOICE_BANK = { classic: "duck1", charcoal: "duck2", purple: "duck3", blue: "duck4" };
   const chirpCache = new Map();
@@ -1705,7 +1734,7 @@ async function boot({ scene, camera, renderer }) {
     // Runtime mouth-mode rule (main.rs: motor_targets[MOUTH] += offset):
     // the policy's jaw is the BASE and the trigger/quack opening is an
     // additive offset on top, clamped - it never fights the pick motion.
-    return Math.min(1, pickJawNow() + Math.max(flap, padJaw));
+    return Math.min(1, pickJawNow() + Math.max(flap, padJaw, manualJaw));
   }
   function syncJaw() {
     setJawOpen(rig, jawOpenNow());
@@ -1895,28 +1924,50 @@ async function boot({ scene, camera, renderer }) {
       touchWasConnected = touchSource.connected;
       setStore({ touchMode: touchSource.connected });
     }
-    // Head mode: sticks steer the head targets (stick * HEAD_MAX, signed
-    // per joint); the EMA toward them runs in buildObs at 50 Hz. The mobile
-    // head deck feeds the same slots when a touch source is active. Without
-    // either source the targets stay put (and are debug-writable via window.rl).
+    // Head mode: sticks/keys steer the head targets (stick * HEAD_MAX,
+    // signed per joint); the EMA toward them runs in buildObs at 50 Hz.
+    // The source order follows active mode ownership, not browser priority.
     if (headMode && padSource.connected) {
       const h = padSource.head;
       headTarget[0] = HEAD_SIGNS[0] * h.neckPitch * HEAD_MAX;
       headTarget[1] = HEAD_SIGNS[1] * h.pitch * HEAD_MAX;
       headTarget[2] = HEAD_SIGNS[2] * h.yaw * HEAD_MAX;
       headTarget[3] = HEAD_SIGNS[3] * h.roll * HEAD_MAX;
-    } else if (headMode && touchSource.connected) {
+    } else if (touchInputMode === "head" && touchSource.connected) {
       const h = touchSource.head;
       headTarget[0] = HEAD_SIGNS[0] * h.neckPitch * HEAD_MAX;
       headTarget[1] = HEAD_SIGNS[1] * h.pitch * HEAD_MAX;
       headTarget[2] = HEAD_SIGNS[2] * h.yaw * HEAD_MAX;
       headTarget[3] = HEAD_SIGNS[3] * h.roll * HEAD_MAX;
+    } else if (keyboardInputMode === "head") {
+      const p = kbSource.pressed;
+      headTarget[0] = HEAD_SIGNS[0] * ((p.auxUp ? 1 : 0) - (p.auxDown ? 1 : 0)) * HEAD_MAX;
+      headTarget[1] = HEAD_SIGNS[1] * ((p.fwd ? 1 : 0) - (p.back ? 1 : 0)) * HEAD_MAX;
+      headTarget[2] = HEAD_SIGNS[2] * ((p.turnl ? 1 : 0) - (p.turnr ? 1 : 0)) * HEAD_MAX;
+      headTarget[3] = HEAD_SIGNS[3] * ((p.auxLeft ? 1 : 0) - (p.auxRight ? 1 : 0)) * HEAD_MAX;
+    }
+    if (padPoseMode && padSource.connected) {
+      const b = padSource.body;
+      bodyTarget[0] = b.z >= 0 ? b.z * BODY_Z_UP : b.z * BODY_Z_DOWN;
+      bodyTarget[1] = b.roll * BODY_MAX_ANGLE;
+      bodyTarget[2] = b.pitch * BODY_MAX_ANGLE;
+    } else if (touchInputMode === "pose" && touchSource.connected) {
+      const b = touchSource.body;
+      bodyTarget[0] = b.z >= 0 ? b.z * BODY_Z_UP : b.z * BODY_Z_DOWN;
+      bodyTarget[1] = b.roll * BODY_MAX_ANGLE;
+      bodyTarget[2] = b.pitch * BODY_MAX_ANGLE;
+    } else if (keyboardInputMode === "pose") {
+      const p = kbSource.pressed;
+      const z = (p.fwd ? 1 : 0) - (p.back ? 1 : 0);
+      bodyTarget[0] = z >= 0 ? z * BODY_Z_UP : z * BODY_Z_DOWN;
+      bodyTarget[1] = ((p.auxLeft ? 1 : 0) - (p.auxRight ? 1 : 0)) * BODY_MAX_ANGLE;
+      bodyTarget[2] = ((p.auxUp ? 1 : 0) - (p.auxDown ? 1 : 0)) * BODY_MAX_ANGLE;
     }
     // Camera orbit runs every frame while a pad is present (the coasting
     // needs the zero-deflection frames too); without a pad, park the
     // state. Head mode parks it too: the right stick belongs to the head
     // and the camera must freeze in place (no leftover coasting).
-    if (padSource.connected && !headMode) {
+    if (padSource.connected && !operatorInputActive()) {
       padOrbitStep(controller.getAxes().orbitX, controller.getAxes().orbitY, dt);
     } else {
       padOrbitLive = false;
@@ -1950,6 +2001,11 @@ async function boot({ scene, camera, renderer }) {
   controller.on("reset", () => resetSim());
   controller.on("spawnBall", () => spawnBall());
   controller.on("headToggle", () => toggleHeadMode());
+  controller.on("bodyPoseToggle", () => toggleBodyPoseMode());
+  controller.on("keyboardHeadToggle", () => toggleKeyboardInputMode("head"));
+  controller.on("keyboardPoseToggle", () => toggleKeyboardInputMode("pose"));
+  controller.on("touchHeadToggle", () => toggleTouchInputMode("head"));
+  controller.on("touchPoseToggle", () => toggleTouchInputMode("pose"));
   controller.on("chaseToggle", () => { chaseCam = !chaseCam; });
   controller.on("locoToggle", () => toggleLoco());
   controller.on("wbcToggle", () => { void setControlMode(controlMode === "wbc" ? "skills" : "wbc"); });
@@ -1981,13 +2037,87 @@ async function boot({ scene, camera, renderer }) {
 
   // Leaving head mode keeps the head offsets (runtime behavior): only
   // resetSim zeroes headTarget/headSmooth.
-  function exitHeadMode() {
-    if (!headMode) return;
+  function exitHeadMode(sync = true) {
+    if (!headMode && !padPoseMode) return;
+    const wasPose = padPoseMode;
     headMode = false;
+    padPoseMode = false;
     padSource.headMode = false;
-    touchSource.headMode = false;
+    padSource.poseMode = false;
+    if (wasPose) clearBodyPose();
+    if (sync) syncButtons();
+  }
+
+  function canEnterOperatorInputMode() {
+    return loco === "legs" && controlMode === "skills" && !inputLocked &&
+      (mode === "walk" || mode === "sitstand") && postKickLock === 0 &&
+      !standTimer && !recovery;
+  }
+
+  function clearBodyPose() {
+    bodyTarget.fill(0);
+    bodySmooth.fill(0);
+    Object.assign(touchSource.body, { z: 0, roll: 0, pitch: 0 });
+  }
+
+  function leaveTouchInputMode(sync = true) {
+    if (touchInputMode === "drive") return;
+    const wasPose = touchInputMode === "pose";
+    touchInputMode = "drive";
+    touchSource.inputMode = "drive";
     Object.assign(touchSource.head, { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 });
+    if (wasPose) clearBodyPose();
+    setStore({ touchInputMode });
+    if (sync) syncButtons();
+  }
+
+  function leaveKeyboardInputMode(sync = true) {
+    if (keyboardInputMode === "drive") return;
+    const wasPose = keyboardInputMode === "pose";
+    keyboardInputMode = "drive";
+    if (wasPose) clearBodyPose();
+    setStore({ keyboardInputMode });
+    if (sync) syncButtons();
+  }
+
+  function clearOperatorInputModes() {
+    exitHeadMode(false);
+    leaveTouchInputMode(false);
+    leaveKeyboardInputMode(false);
     syncButtons();
+  }
+
+  function setTouchInputMode(next) {
+    if (!["drive", "head", "pose"].includes(next)) return;
+    if (next === "drive") return leaveTouchInputMode();
+    if (!canEnterOperatorInputMode()) return;
+    exitHeadMode(false);
+    leaveKeyboardInputMode(false);
+    if (touchInputMode === "pose" && next !== "pose") clearBodyPose();
+    touchInputMode = next;
+    touchSource.inputMode = next;
+    setStore({ touchInputMode });
+    syncButtons();
+  }
+
+  function toggleTouchInputMode(next) {
+    setTouchInputMode(touchInputMode === next ? "drive" : next);
+  }
+
+  function setKeyboardInputMode(next) {
+    if (!["drive", "head", "pose"].includes(next)) return;
+    if (next === "drive") return leaveKeyboardInputMode();
+    if (!canEnterOperatorInputMode()) return;
+    exitHeadMode(false);
+    leaveTouchInputMode(false);
+    if (keyboardInputMode === "pose" && next !== "pose") clearBodyPose();
+    keyboardInputMode = next;
+    setStore({ keyboardInputMode });
+    syncButtons();
+  }
+
+  function toggleKeyboardInputMode(next) {
+    setKeyboardInputMode(keyboardInputMode === next ? "drive" : next);
   }
 
   function toggleHeadMode() {
@@ -1996,12 +2126,27 @@ async function boot({ scene, camera, renderer }) {
     // (roll / kick), the post-kick grace, a stand-up hand-back, a fall
     // recovery, or while the entrance/respawn lock holds the inputs.
     if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
-        (mode !== "walk" && mode !== "sitstand") || postKickLock > 0 ||
-        standTimer || recovery)
+        !canEnterOperatorInputMode())
       return;
+    leaveTouchInputMode(false);
+    leaveKeyboardInputMode(false);
+    exitHeadMode(false);
     headMode = true;
+    padPoseMode = false;
     padSource.headMode = true;
-    touchSource.headMode = true;
+    padSource.poseMode = false;
+    syncButtons();
+  }
+
+  function toggleBodyPoseMode() {
+    if (padPoseMode) return exitHeadMode();
+    if (!canEnterOperatorInputMode()) return;
+    leaveTouchInputMode(false);
+    leaveKeyboardInputMode(false);
+    exitHeadMode(false);
+    padPoseMode = true;
+    padSource.headMode = false;
+    padSource.poseMode = true;
     syncButtons();
   }
 
@@ -2015,7 +2160,7 @@ async function boot({ scene, camera, renderer }) {
     if (recovery) return;
     if ((mode === "roll" && rollRun) || (isKick() && kickRun) ||
         (mode === "groundpick" && pickRun)) return;
-    exitHeadMode(); // posture changes exit head mode (offsets kept)
+    clearOperatorInputModes(); // posture changes exit modal control (head offsets kept)
     clearModeTimers();
     rollRun = null;
     pickRun = null;
@@ -2054,8 +2199,7 @@ async function boot({ scene, camera, renderer }) {
   // policy switches, and the roll initiates more reliably mid-gait.
   function triggerRoll(source = "kb") {
     if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
-        mode !== "walk" || standTimer || recovery) return;
-    exitHeadMode();
+        mode !== "walk" || standTimer || recovery || operatorInputActive()) return;
     clearModeTimers();
     mode = "roll";
     sitFlag = 0;
@@ -2069,8 +2213,7 @@ async function boot({ scene, camera, renderer }) {
   // entrance lock.
   function triggerGroundPick(source = "kb") {
     if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
-        mode !== "walk" || standTimer || recovery) return;
-    exitHeadMode();
+        mode !== "walk" || standTimer || recovery || operatorInputActive()) return;
     clearModeTimers();
     mode = "groundpick";
     sitFlag = 0;
@@ -2083,8 +2226,7 @@ async function boot({ scene, camera, renderer }) {
   // alternation only advances on real kicks.
   function triggerKick(foot, source = "kb") {
     if (loco !== "legs" || controlMode !== "skills" || inputLocked ||
-        mode !== "walk" || standTimer || recovery) return false;
-    exitHeadMode();
+        mode !== "walk" || standTimer || recovery || operatorInputActive()) return false;
     clearModeTimers();
     mode = foot === "left" ? "kickL" : "kickR";
     sitFlag = 0;
@@ -2103,6 +2245,9 @@ async function boot({ scene, camera, renderer }) {
       : mode === "groundpick" ? "Pick"
       : isKick() ? "Kick"
       : headMode ? "Head"
+      : padPoseMode ? "Pose"
+      : touchInputMode === "head" || keyboardInputMode === "head" ? "Head"
+      : touchInputMode === "pose" || keyboardInputMode === "pose" ? "Pose"
       : sitting ? "Sit"
       : loco === "rollers" ? "Drive"
       : "Run";
@@ -2142,7 +2287,6 @@ async function boot({ scene, camera, renderer }) {
         case "walk":
           if (mode !== "walk" && mode !== "roll") setMode("walk");
           break;
-        case "head": toggleHeadMode(); break;
         case "camera": chaseCam = !chaseCam; break;
         case "reset": resetSim(); break;
         case "quack": quackLoud(); break;
@@ -2152,15 +2296,11 @@ async function boot({ scene, camera, renderer }) {
         default: break;
       }
     },
-    setTouchHeadInput: ({ neckPitch = 0, pitch = 0, yaw = 0, roll = 0 } = {}) => {
-      if (!headMode || !touchSource.connected) return;
-      const clamp = (value) => Math.max(-1, Math.min(1, Number(value) || 0));
-      Object.assign(touchSource.head, {
-        neckPitch: clamp(neckPitch),
-        pitch: clamp(pitch),
-        yaw: clamp(yaw),
-        roll: clamp(roll),
-      });
+    setTouchInputMode,
+    setKeyboardInputMode,
+    setMouthOpen: (open) => {
+      manualJaw = Math.max(0, Math.min(1, Number(open) || 0));
+      setStore({ mouthOpen: manualJaw });
     },
     resetSim,
     spawnBall: () => spawnBall(),
@@ -2177,7 +2317,7 @@ async function boot({ scene, camera, renderer }) {
     get sitFlag() { return sitFlag; },
     buildObs, cmd,
     velCmd: kbSource.command, lastAction, resetSim,
-    controller, kbSource, padSource,
+    controller, kbSource, padSource, touchSource,
     spawnBall, triggerKick, triggerRoll, sessions, ort,
     get loco() { return loco; },
     get locoSwitching() { return locoSwitching; },
@@ -2204,7 +2344,10 @@ async function boot({ scene, camera, renderer }) {
       qvel[3] += wx; qvel[4] += wy; qvel[5] += wz;
     },
     get headMode() { return headMode; },
-    toggleHeadMode, headTarget, headSmooth,
+    get touchInputMode() { return touchInputMode; },
+    get keyboardInputMode() { return keyboardInputMode; },
+    toggleHeadMode, toggleBodyPoseMode, setTouchInputMode, setKeyboardInputMode,
+    headTarget, headSmooth, bodyTarget, bodySmooth,
     get ballActive() { return ballActive; },
     get ballQposAdr() { return ballQposAdr; },
     get chaseCam() { return chaseCam; },
