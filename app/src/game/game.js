@@ -454,10 +454,9 @@ async function boot({ scene, camera, renderer }) {
   let wbcRequest = 0;
   let controlEpoch = 0;
 
-  // HEAD mode (runtime-faithful, pad Y): locomotion is zeroed and both
-  // sticks drive the head command slots cmd[3..6] = [neck_pitch,
-  // head_pitch, head_yaw, head_roll]. Targets are stick * HEAD_MAX,
-  // EMA-smoothed at 50 Hz in buildObs like the runtime (alpha 0.2).
+  // Head/Pose modes keep left-stick velocity live and route the right stick
+  // into command slots. Head targets are stick * HEAD_MAX and EMA-smoothed
+  // at 50 Hz in buildObs like the runtime (alpha 0.2).
   // Offsets PERSIST when leaving head mode; only a sim reset zeroes them.
   let headMode = false;
   let padPoseMode = false;
@@ -468,8 +467,6 @@ async function boot({ scene, camera, renderer }) {
   let keyboardInputMode = "drive"; // "drive" | "head" | "pose"
   const HEAD_MAX = 2.5; // rad at full deflection (runtime head_max)
   const HEAD_ALPHA = 0.2;
-  const BODY_Z_UP = 0.010;
-  const BODY_Z_DOWN = 0.025;
   const BODY_MAX_ANGLE = 0.2618;
   // Stick-to-joint polarity (deflections come in up/left = +1), tuned
   // visually in the sim: cmd + means UP for neck_pitch but DOWN for
@@ -490,11 +487,9 @@ async function boot({ scene, camera, renderer }) {
 
   // The twist the policy actually receives. Mid-roll every movement input
   // is ignored (zero twist) until the roll hands back to walk on its own.
-  // HEAD mode also zeroes it: the runtime stops the robot while the
-  // sticks drive the head.
   const ZERO_CMD = new Float32Array(3);
   function effectiveCmd() {
-    if (inputLocked || operatorInputActive() || mode === "roll" ||
+    if (inputLocked || mode === "roll" ||
         mode === "groundpick" || isKick() || postKickLock > 0 || recovery)
       return ZERO_CMD;
     return controller.getCommand();
@@ -505,7 +500,7 @@ async function boot({ scene, camera, renderer }) {
   // unavailable in the public UI.
   function runForwardEligible() {
     return controlMode === "skills" && loco === "legs" && mode === "walk" &&
-      !inputLocked && !operatorInputActive() && !recovery && postKickLock === 0 && !standTimer &&
+      !inputLocked && !recovery && postKickLock === 0 && !standTimer &&
       kbSource.pressed.fwd;
   }
   let rollRun = null;
@@ -1447,9 +1442,8 @@ async function boot({ scene, camera, renderer }) {
       if (t >= 1) camResetT0 = null;
       return;
     }
-    // Head mode: the camera freezes where it is. It keeps looking at the
-    // duck for free - syncRig translates camera and target by the same
-    // delta, and the duck isn't walking anyway (twist zeroed).
+    // Head/Pose mode: the right stick belongs to the duck, so the camera
+    // freezes in place while the left stick can continue driving.
     if (operatorInputActive()) return;
     if (!chaseCam) return;
     const qpos = data.qpos;
@@ -1697,6 +1691,15 @@ async function boot({ scene, camera, renderer }) {
   wawaAudio.preload = "auto";
   wawaAudio.volume = 0.7;
   wawaAudio.load();
+  const WAWA_FLAP_HZ = 3.8;
+  let wawaFlapping = false;
+  let wawaPlayback = 0;
+  const stopWawaFlap = () => { wawaFlapping = false; };
+  // `ended` is the normal stop path; pause/error make the visual fail
+  // closed if the browser interrupts or cannot play the media.
+  wawaAudio.addEventListener("ended", stopWawaFlap);
+  wawaAudio.addEventListener("pause", stopWawaFlap);
+  wawaAudio.addEventListener("error", stopWawaFlap);
   function playChirp() {
     const bank = VOICE_BANK[currentVariant] ?? "duck1";
     const take = CHIRP_TAKES[(Math.random() * CHIRP_TAKES.length) | 0];
@@ -1716,10 +1719,15 @@ async function boot({ scene, camera, renderer }) {
     stickers?.pop("quack");
   };
   const wawaLoud = () => {
-    // Reuse Quack's jaw clock exactly, so only the voice differs.
-    quackAt = performance.now();
+    // Wawa owns its own flap state: it must keep moving for the complete
+    // audio duration rather than borrowing Quack's short 480 ms envelope.
+    const playback = ++wawaPlayback;
+    wawaFlapping = true;
     wawaAudio.currentTime = 0;
-    wawaAudio.play().catch(() => {});
+    wawaAudio.play().catch(() => {
+      // A rapid second press supersedes the rejected first play() promise.
+      if (playback === wawaPlayback) stopWawaFlap();
+    });
     stickers?.pop("quack");
   };
   // Ground-pick jaw: on the robot the pick policy drives the mouth itself
@@ -1746,10 +1754,16 @@ async function boot({ scene, camera, renderer }) {
   function jawOpenNow() {
     const t = (performance.now() - quackAt) / QUACK_MS;
     const flap = t >= 0 && t < 1 ? Math.sin(Math.PI * t) : 0;
+    // The Wawa beak is an even looping open/close cycle whose lifetime is
+    // tied to the actual media element, including its ended/pause/error
+    // events. Keep a little aperture at the trough so it reads as talking.
+    const wawaFlap = wawaFlapping
+      ? 0.22 + 0.78 * (0.5 + 0.5 * Math.sin(performance.now() * WAWA_FLAP_HZ * 2 * Math.PI / 1000))
+      : 0;
     // Runtime mouth-mode rule (main.rs: motor_targets[MOUTH] += offset):
     // the policy's jaw is the BASE and the trigger/quack opening is an
     // additive offset on top, clamped - it never fights the pick motion.
-    return Math.min(1, pickJawNow() + Math.max(flap, padJaw, manualJaw));
+    return Math.min(1, pickJawNow() + Math.max(flap, wawaFlap, padJaw, manualJaw));
   }
   function syncJaw() {
     setJawOpen(rig, jawOpenNow());
@@ -1956,31 +1970,30 @@ async function boot({ scene, camera, renderer }) {
       headTarget[3] = HEAD_SIGNS[3] * h.roll * HEAD_MAX;
     } else if (keyboardInputMode === "head") {
       const p = kbSource.pressed;
-      headTarget[0] = HEAD_SIGNS[0] * ((p.auxUp ? 1 : 0) - (p.auxDown ? 1 : 0)) * HEAD_MAX;
-      headTarget[1] = HEAD_SIGNS[1] * ((p.fwd ? 1 : 0) - (p.back ? 1 : 0)) * HEAD_MAX;
-      headTarget[2] = HEAD_SIGNS[2] * ((p.turnl ? 1 : 0) - (p.turnr ? 1 : 0)) * HEAD_MAX;
-      headTarget[3] = HEAD_SIGNS[3] * ((p.auxLeft ? 1 : 0) - (p.auxRight ? 1 : 0)) * HEAD_MAX;
+      headTarget[0] = 0;
+      headTarget[1] = HEAD_SIGNS[1] * ((p.auxUp ? 1 : 0) - (p.auxDown ? 1 : 0)) * HEAD_MAX;
+      headTarget[2] = HEAD_SIGNS[2] * ((p.auxLeft ? 1 : 0) - (p.auxRight ? 1 : 0)) * HEAD_MAX;
+      headTarget[3] = 0;
     }
     if (padPoseMode && padSource.connected) {
       const b = padSource.body;
-      bodyTarget[0] = b.z >= 0 ? b.z * BODY_Z_UP : b.z * BODY_Z_DOWN;
+      bodyTarget[0] = 0;
       bodyTarget[1] = b.roll * BODY_MAX_ANGLE;
       bodyTarget[2] = b.pitch * BODY_MAX_ANGLE;
     } else if (touchInputMode === "pose" && touchSource.connected) {
       const b = touchSource.body;
-      bodyTarget[0] = b.z >= 0 ? b.z * BODY_Z_UP : b.z * BODY_Z_DOWN;
+      bodyTarget[0] = 0;
       bodyTarget[1] = b.roll * BODY_MAX_ANGLE;
       bodyTarget[2] = b.pitch * BODY_MAX_ANGLE;
     } else if (keyboardInputMode === "pose") {
       const p = kbSource.pressed;
-      const z = (p.fwd ? 1 : 0) - (p.back ? 1 : 0);
-      bodyTarget[0] = z >= 0 ? z * BODY_Z_UP : z * BODY_Z_DOWN;
+      bodyTarget[0] = 0;
       bodyTarget[1] = ((p.auxLeft ? 1 : 0) - (p.auxRight ? 1 : 0)) * BODY_MAX_ANGLE;
       bodyTarget[2] = ((p.auxUp ? 1 : 0) - (p.auxDown ? 1 : 0)) * BODY_MAX_ANGLE;
     }
     // Camera orbit runs every frame while a pad is present (the coasting
     // needs the zero-deflection frames too); without a pad, park the
-    // state. Head mode parks it too: the right stick belongs to the head
+    // state. Head/Pose parks it too: the right stick belongs to the duck
     // and the camera must freeze in place (no leftover coasting).
     if (padSource.connected && !operatorInputActive()) {
       padOrbitStep(controller.getAxes().orbitX, controller.getAxes().orbitY, dt);

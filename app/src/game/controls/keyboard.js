@@ -2,9 +2,8 @@
 // contract). Hold-to-command movement keys plus one-shot action keys.
 //
 // e.code is the PHYSICAL key position, so one map covers QWERTY and AZERTY:
-// arrows / WASD (ZQSD) run + turn. No strafe - vy stays 0. In the two
-// modal operator modes, those same keys become the left-stick equivalent;
-// I/J/K/L provide the right-stick equivalent.
+// arrows / WASD (ZQSD) always run + turn. No strafe - vy stays 0. In the
+// two modal operator modes I/J/K/L provide the right-stick equivalent.
 
 const KEYMAP = {
   ArrowUp: "fwd", KeyW: "fwd",

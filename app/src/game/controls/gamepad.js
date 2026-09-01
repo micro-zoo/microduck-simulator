@@ -8,14 +8,10 @@
 //                camera code). R3 toggles the chase cam.
 //   A            ground pick (feet only)
 //   X            roulade (feet only); holding X can request another roll
-//   Y            HEAD mode toggle (runtime-faithful). While the game sets
-//                `headMode`, locomotion is parked and BOTH sticks drive
-//                the head instead: left = head pitch/yaw, right = neck
-//                pitch/head roll (reported in `head`, deflections in
-//                [-1, 1], up/left positive). The right stick stops
-//                orbiting the camera for the duration.
-//   B            BODY POSE mode toggle. Left stick raises/crouches; right
-//                stick pitches/rolls. Velocity and camera orbit are parked.
+//   Y            HEAD mode toggle. Left stick keeps velocity; right stick
+//                drives head pitch/yaw and stops orbiting the camera.
+//   B            BODY POSE mode toggle. Left stick keeps velocity; right
+//                stick pitches/rolls and stops orbiting the camera.
 //   RB / LB      right / left kick (feet only)
 //   DpadDown     sit <-> stand (feet only)
 //   DpadRight    hold ~1 s to toggle the optional WBC stack
@@ -53,8 +49,8 @@ export class GamepadSource {
   connected = false;
   command = new Float32Array(3); // [vx, 0, wz], EMA-smoothed
   axes = { jaw: 0, orbitX: 0, orbitY: 0, ride: 0 };
-  // Head-mode routing flag, owned by the game (mode state machine lives
-  // there); while true the sticks fill `head` instead of command/orbit.
+  // Modal routing flags owned by the game. The left stick always remains
+  // the drive command; the right stick becomes head/body instead of orbit.
   headMode = false;
   poseMode = false;
   head = { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 }; // stick deflections
@@ -119,37 +115,31 @@ export class GamepadSource {
     const lx = dz(gp.axes[0] ?? 0), ly = dz(gp.axes[1] ?? 0);
     const rx = dz(gp.axes[2] ?? 0), ry = dz(gp.axes[3] ?? 0);
     const [limF, limB, limA] = this.#getVelocityLimits();
-    let target;
+    const up = -ly; // browser sticks report up as -1
+    const target = [
+      up >= 0 ? up * limF : up * -limB,
+      0,
+      -lx * limA,
+    ];
     if (this.headMode) {
-      // HEAD mode: locomotion parks (EMA settles to zero), the camera
-      // orbit is frozen, and the sticks report head deflections instead
-      // (up/left positive; sign-to-joint mapping lives in the game).
-      target = [0, 0, 0];
-      this.head.pitch = -ly;
-      this.head.yaw = -lx;
-      this.head.neckPitch = -ry;
-      this.head.roll = -rx;
+      // Right stick owns the familiar look pitch/yaw pair while velocity
+      // continues on the left stick.
+      this.head.pitch = -ry;
+      this.head.yaw = -rx;
+      this.head.neckPitch = 0;
+      this.head.roll = 0;
       this.axes.orbitX = 0;
       this.axes.orbitY = 0;
       this.#zeroBody();
     } else if (this.poseMode) {
-      target = [0, 0, 0];
-      // browser sticks report up as -1; source contract is up/left +1.
-      this.body.z = -ly;
+      this.body.z = 0;
       this.body.roll = rx;
       this.body.pitch = -ry;
       this.#zeroHead();
       this.axes.orbitX = 0;
       this.axes.orbitY = 0;
     } else {
-      // Left stick only: vertical = forward/back, horizontal = turn.
-      // (No strafe; the right stick doesn't drive movement.)
-      const up = -ly; // browser sticks report up as -1
-      target = [
-        up >= 0 ? up * limF : up * -limB,
-        0,
-        -lx * limA,
-      ];
+      // Right stick is a camera orbit only outside Head/Pose.
       this.#zeroHead();
       this.#zeroBody();
       // Right stick: raw (deadzoned) orbit rate. Reported every frame -
@@ -161,9 +151,8 @@ export class GamepadSource {
     for (let i = 0; i < 3; i++) this.command[i] += PAD_ALPHA * (target[i] - this.command[i]);
     // Sticks grab command authority on first input, release when back at
     // rest (then the keyboard takes over again through the Controller's
-    // arbitration). In head mode the sticks belong to the head, so they
-    // never claim the twist.
-    const stickInput = !this.headMode && !this.poseMode && (lx !== 0 || ly !== 0);
+    // arbitration). Left-stick velocity remains live in every input mode.
+    const stickInput = lx !== 0 || ly !== 0;
     if (stickInput) this.#active = true;
     else if (
       this.#active &&

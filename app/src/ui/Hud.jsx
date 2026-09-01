@@ -685,15 +685,15 @@ function ControlHints() {
   const keyboardModalHints = keyboardInputMode === "head"
     ? [
         { caps: [labels.KeyH], label: "Drive" },
-        { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Head" },
-        { caps: [labels.KeyI, labels.KeyK], label: "Neck" },
-        { caps: [labels.KeyJ, labels.KeyL], label: "Tilt" },
+        { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Move" },
+        { caps: [labels.KeyI, labels.KeyK], label: "Pitch" },
+        { caps: [labels.KeyJ, labels.KeyL], label: "Yaw" },
         { caps: ["Space"], label: "Reset" },
       ]
     : keyboardInputMode === "pose"
     ? [
         { caps: [labels.KeyP], label: "Drive" },
-        { caps: ["↑↓", `${labels.KeyW} / ${labels.KeyS}`], label: "Height" },
+        { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Move" },
         { caps: [labels.KeyI, labels.KeyK], label: "Pitch" },
         { caps: [labels.KeyJ, labels.KeyL], label: "Roll" },
         { caps: ["Space"], label: "Reset" },

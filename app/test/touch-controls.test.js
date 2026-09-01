@@ -19,14 +19,14 @@ function makeElement() {
   };
 }
 
-test("touch Head and Pose map exactly onto padd's two-stick command contract", () => {
+test("touch Head and Pose reserve only the right stick, leaving the left for drive", () => {
   assert.deepEqual(mapTouchControlMode("head", [0.4, 0.5], [0.6, 0.7]), {
-    head: { neckPitch: 0.7, pitch: 0.5, yaw: -0.4, roll: -0.6 },
+    head: { neckPitch: 0, pitch: 0.7, yaw: -0.6, roll: 0 },
     body: { z: 0, roll: 0, pitch: 0 },
   });
   assert.deepEqual(mapTouchControlMode("pose", [0.4, -0.5], [0.6, 0.7]), {
     head: { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 },
-    body: { z: -0.5, roll: 0.6, pitch: 0.7 },
+    body: { z: 0, roll: 0.6, pitch: 0.7 },
   });
 });
 

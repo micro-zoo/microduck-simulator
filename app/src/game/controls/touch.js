@@ -1,7 +1,7 @@
 // Touch input source (see controller.js for the source interface contract).
 // Drive has one floating movement stick plus a right action deck. Head and
-// body-pose mirror the deployed padd client: a mode button parks velocity
-// and exposes a second floating stick, so both thumbs map continuously.
+// body-pose keep that left stick as velocity while exposing a second floating
+// stick for the selected upper-body control, so both can run concurrently.
 //
 //   Left thumb   FLOATING analog stick: the lower-left quadrant of the
 //                screen (#touch-zone) is the grab area, and the stick base
@@ -12,9 +12,8 @@
 //                nub tracks the finger clamped to the base circle; the
 //                command is EMA-smoothed like the gamepad's so releases
 //                don't snap.
-//   Head mode   left stick = head pitch/yaw; right stick = neck pitch/roll.
-//   Pose mode   left stick y = body z; right stick = pitch/roll. This is the
-//               deployed padd mapping, including its modal velocity stop.
+//   Head mode   left stick = velocity; right stick = head pitch/yaw.
+//   Pose mode   left stick = velocity; right stick = body pitch/roll.
 //   Right deck  kick, roll, pick, mouth, quack, wawa, sit and the Head/Pose mode
 //               buttons. Mouth is a level; quack is a press edge + level.
 //
@@ -28,17 +27,16 @@
 const TOUCH_ALPHA = 0.18; // EMA smoothing toward the stick target
 const TOUCH_DEADZONE = 0.12; // normalized deflection ignored around center
 
-// Exact deployed padd stick routing, expressed as normalized deflections.
-// game.js applies max_head and the asymmetric body-z range at the policy
-// boundary, keeping this input source independent of trained-value details.
+// Web control routing, expressed as normalized deflections. `game.js`
+// applies trained-command ranges at the policy boundary.
 export function mapTouchControlMode(mode, left, right) {
   if (mode === "head") {
     return {
       head: {
-        neckPitch: right[1],
-        pitch: left[1],
-        yaw: -left[0],
-        roll: -right[0],
+        neckPitch: 0,
+        pitch: right[1],
+        yaw: -right[0],
+        roll: 0,
       },
       body: { z: 0, roll: 0, pitch: 0 },
     };
@@ -46,7 +44,7 @@ export function mapTouchControlMode(mode, left, right) {
   if (mode === "pose") {
     return {
       head: { neckPitch: 0, pitch: 0, yaw: 0, roll: 0 },
-      body: { z: left[1], roll: right[0], pitch: right[1] },
+      body: { z: 0, roll: right[0], pitch: right[1] },
     };
   }
   return {
@@ -130,14 +128,13 @@ export class TouchSource {
   poll() {
     const [x, y] = this.#target;
     const [limF, limB, limA] = this.#getVelocityLimits();
-    const driving = this.inputMode === "drive";
-    const tvx = driving ? (y >= 0 ? y * limF : y * -limB) : 0;
-    const twz = driving ? -x * limA : 0;
+    const tvx = y >= 0 ? y * limF : y * -limB;
+    const twz = -x * limA;
     this.command[0] += TOUCH_ALPHA * (tvx - this.command[0]);
     this.command[2] += TOUCH_ALPHA * (twz - this.command[2]);
     // Same authority rule as the gamepad sticks: grab on input, release
     // once the smoothed command has settled back to ~zero.
-    if (driving && this.pressed.stick) this.#active = true;
+    if (this.pressed.stick) this.#active = true;
     else if (this.#active && Math.abs(this.command[0]) + Math.abs(this.command[2]) < 0.01) {
       this.#active = false;
       this.command.fill(0);

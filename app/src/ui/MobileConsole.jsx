@@ -299,8 +299,8 @@ export default function MobileConsole() {
               {touchInputMode === "drive"
                 ? "Drive · left stick controls speed and turn"
                 : touchInputMode === "head"
-                ? "Head · left: pitch / yaw · right: neck / roll · speed parked"
-                : "Pose · left: raise / crouch · right: pitch / roll · speed parked"}
+                ? "Head · left: speed / turn · right: pitch / yaw"
+                : "Pose · left: speed / turn · right: pitch / roll"}
             </Box>
           </DeckSection>
 

@@ -77,7 +77,7 @@
 //   spawnBall     pop / respawn the kickable ball (no bound key; game/API)
 //   wbcToggle     Skills <-> WBC (pad D-pad right hold)
 //   headToggle    feet-only HEAD mode on/off (pad Y): sticks drive the head
-//   bodyPoseToggle feet-only BODY POSE mode on/off (pad B): sticks lean/crouch
+//   bodyPoseToggle feet-only BODY POSE mode on/off (pad B): right stick leans while left drives
 //   sitToggle     sit <-> stand (game gates it to legs mode)
 //   locoToggle    legs <-> rollers switch
 //   chaseToggle   chase camera on/off
