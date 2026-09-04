@@ -19,8 +19,8 @@ export const POLICIES = {
   // skill; crouch remains catalogued for deployment-asset completeness.
   drive: `${POLICY_DIR}/BEST_roller.onnx`,
   crouch: `${POLICY_DIR}/BEST_roller_crouch.onnx`,
-  // Local sprint trial exported from model_3250.pt. This is intentionally
-  // outside OFFICIAL_POLICY_CATALOG until it is promoted to deployment.
+  // Local v7 recovery-sprint policy.  It is intentionally outside
+  // OFFICIAL_POLICY_CATALOG: this browser asset is not a deployment claim.
   run: `${POLICY_DIR}/run.onnx`,
 };
 
@@ -60,7 +60,7 @@ export const CMD_SIZE = 13;
 export const WALK_ACTION_SCALE = 0.9;
 export const ROLLER_ACTION_SCALE = 0.8;
 export const SKILL_ACTION_SCALE = 1.0;
-// model_3250.pt's exported ONNX declares action_scale=1.0.
+// The local v7 run ONNX declares action_scale=1.0.
 export const RUN_ACTION_SCALE = 1.0;
 export const STANDING_THRESHOLD = 0.05;
 export const TIMESTEP = 0.005;
@@ -70,9 +70,10 @@ export const CTRL_DT = TIMESTEP * DECIMATION; // 50 Hz
 // Velocity command limits, same as infer_policy.py's keyboard mapping.
 // No strafe input anymore: the lateral cmd slot stays zeroed for the obs.
 export const VEL_FWD = 0.25, VEL_BACK = -0.2, VEL_ANG = 1.0;
-// Shift runs the sprint policy through a command ramp. At 50 Hz, the 0.01
-// m/s² slope takes 75 s to move between the walk command and this target.
-export const RUN_VEL_FWD = 1.0;
+// Shift runs the v7 sprint policy through a command ramp.  Its command
+// ceiling is synchronized with the policy's 0.90 m/s training envelope.
+// At 50 Hz, the 0.01 m/s² slope takes 65 s from walk to that target.
+export const RUN_VEL_FWD = 0.9;
 export const RUN_ACCEL_MPS2 = 0.01;
 export const RUN_DECEL_MPS2 = 0.01;
 // Roller mode limits, from the runtime's roller branch: asymmetric vx
