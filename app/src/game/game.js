@@ -57,7 +57,7 @@ import * as fx from "./fx/fx-wireframe.js";
 import { createCeremony, CAM_RESET_S } from "./ceremony.js";
 import { createBallActor } from "./ball-actor.js";
 import { initGhosts } from "./ghosts.js";
-import { makeInfiniteGrid, makeArenaWalls } from "./arena.js";
+import { makeInfiniteGrid } from "./arena.js";
 import { createBallVisual } from "./ball-visual.js";
 import { loadWbcRuntime } from "./wbc.js";
 import { useGame, gameApi, bootLine, bootNote, bootHalt } from "../store.js";
@@ -197,20 +197,9 @@ async function boot({ scene, camera, renderer }) {
       }
       worldbody.appendChild(el("geom", attrs));
     };
-    const boundaryBoxes = (sceneId) => {
-      const half = SCENES[sceneId].arenaHalf;
-      const ht = 0.05 / 2, hh = 0.25 / 2;
-      const off = half + ht, span = half + 0.05;
-      return [
-        { name: `scene_${sceneId}_wall_px`, pos: `${off} 0 ${hh}`, size: `${ht} ${span} ${hh}` },
-        { name: `scene_${sceneId}_wall_nx`, pos: `${-off} 0 ${hh}`, size: `${ht} ${span} ${hh}` },
-        { name: `scene_${sceneId}_wall_py`, pos: `0 ${off} ${hh}`, size: `${span} ${ht} ${hh}` },
-        { name: `scene_${sceneId}_wall_ny`, pos: `0 ${-off} ${hh}`, size: `${span} ${ht} ${hh}` },
-      ];
-    };
-    for (const sceneId of SCENE_IDS) {
-      for (const wall of boundaryBoxes(sceneId)) appendSceneBox(sceneId, wall);
-    }
+    // Perimeter walls are visual only. A straight sprint is trained on an
+    // unbounded plane; physical scene walls turn its intended forward motion
+    // into a collision after only a few metres.
     // Prop library colliders: one static box per enabled prop
     // (declared in props.js next to the visual placement, optionally
     // yawed via euler to match off-axis staging) so the duck and ball
@@ -1061,15 +1050,13 @@ async function boot({ scene, camera, renderer }) {
     }
   })();
 
-  // ── Scene wiring (grid, walls, rig, ball, arcade row) ────────────────
-  // The grid/walls carry ceremony-driven uReveal uniforms and per-frame
-  // focus updates, so the game owns them; lights and environment live in
-  // the R3F layer.
+  // ── Scene wiring (grid, rig, ball, arcade row) ───────────────────────
+  // The grid carries the ceremony-driven reveal uniform and per-frame focus
+  // updates; the sprint scene deliberately has neither visual nor physical
+  // perimeter walls.
   const grid = makeInfiniteGrid();
   scene.add(grid);
   reliefGridMat = grid.material; // relief drive mirrors uTopoScale into it
-  const { wallMats, wallMeshes } = makeArenaWalls();
-  for (const m of wallMeshes) scene.add(m);
 
   let rig = await rigPromise;
   scene.add(rig.placer);
@@ -1079,10 +1066,9 @@ async function boot({ scene, camera, renderer }) {
     qposAdr, dofAdr, gyroAdr, trunkId, standKeyId, ballQposAdr, ballDofAdr, extraJoints,
   };
 
-  const physicsSceneGeomNames = Object.fromEntries(SCENE_IDS.map((sceneId) => [
-    sceneId,
-    ["px", "nx", "py", "ny"].map((side) => `scene_${sceneId}_wall_${side}`),
-  ]));
+  const physicsSceneGeomNames = Object.fromEntries(
+    SCENE_IDS.map((sceneId) => [sceneId, []]),
+  );
   physicsSceneGeomNames.arcade.push(
     ...propColliders().map((collider) => collider.name),
     "terrain",
@@ -1305,7 +1291,7 @@ async function boot({ scene, camera, renderer }) {
   ceremony = createCeremony({
     THREE, scene, camera, renderer, fx,
     getRig: () => rig,
-    grid, wallMats,
+    grid, wallMats: [],
     syncRig, startCameraReset,
     setLocked: (v) => {
       inputLocked = v;
@@ -1373,7 +1359,6 @@ async function boot({ scene, camera, renderer }) {
       applyPhysicsScene(model, sceneId);
       const arcadeVisible = sceneId === "arcade";
       grid.visible = arcadeVisible;
-      for (const wall of wallMeshes) wall.visible = arcadeVisible;
       for (const groups of Object.values(propGroups)) {
         for (const group of groups) group.visible = arcadeVisible;
       }
@@ -1667,7 +1652,6 @@ async function boot({ scene, camera, renderer }) {
     // grids share the same radial fade focus.
     grid.position.set(controls.target.x, 0, controls.target.z);
     grid.material.uniforms.uFocus.value.copy(controls.target);
-    for (const m of wallMats) m.uniforms.uFocus.value.copy(controls.target);
   }
 
   // ── Quack / Wawa: jaw + voice ─────────────────────────────────────────
