@@ -36,6 +36,7 @@ import {
   RELIEF_BUMPS, RELIEF_HMAX, RELIEF_GRID, RELIEF_SINK, RELIEF_RATE,
 } from "./constants.js";
 import { advanceRunRamp } from "./run-ramp.js";
+import { BAM_M6, BamM6Actuator } from "./bam-actuator.js";
 import { loadProps, propColliders } from "./props.js";
 import {
   DEFAULT_SCENE, SCENES, SCENE_IDS,
@@ -163,6 +164,28 @@ async function boot({ scene, camera, renderer }) {
   async function buildPhysicsXml(xmlFile) {
     const src = await (await fetch(signed(`${MODEL_DIR}/${xmlFile}`))).text();
     const doc = new DOMParser().parseFromString(src, "text/xml");
+    // Leg policies are trained with BAM's XL330 m6 voltage-controlled motor,
+    // not with the source XML's MuJoCo position actuator.  Convert that model
+    // to torque motors here; bam-actuator.js supplies their firmware/physics at
+    // each 5 ms step.  The roller policy was trained on its XML actuator, so it
+    // deliberately keeps the original actuator type.
+    if (xmlFile === "robot_allcollisions.xml") {
+      const chosen = [...doc.querySelectorAll('default[class="chosen_actuator"]')]
+        .map((d) => d.querySelector("joint"))
+        .find(Boolean);
+      if (!chosen) throw new Error("BAM physics requires the chosen_actuator joint default");
+      chosen.setAttribute("armature", String(BAM_M6.armature));
+      chosen.setAttribute("damping", "0");
+      chosen.setAttribute("frictionloss", "0");
+      for (const position of [...doc.querySelectorAll("actuator > position")]) {
+        const motor = doc.createElement("motor");
+        motor.setAttribute("name", position.getAttribute("name"));
+        motor.setAttribute("joint", position.getAttribute("joint"));
+        motor.setAttribute("forcelimited", "true");
+        motor.setAttribute("forcerange", `${-8.2 * BAM_M6.kt / BAM_M6.resistance} ${8.2 * BAM_M6.kt / BAM_M6.resistance}`);
+        position.replaceWith(motor);
+      }
+    }
     for (const g of [...doc.querySelectorAll('geom[class="visual"]')]) g.remove();
     const usedMeshes = new Set(
       [...doc.querySelectorAll("geom[mesh]")].map((g) => g.getAttribute("mesh")),
@@ -364,6 +387,7 @@ async function boot({ scene, camera, renderer }) {
     return {
       qposAdr: JOINT_NAMES.map((n) => model.jnt(n).qposadr),
       dofAdr: JOINT_NAMES.map((n) => model.jnt(n).dofadr),
+      ctrlAdr: JOINT_NAMES.map((n) => model.actuator(n).id),
       gyroAdr: model.sensor("imu_ang_vel").adr,
       trunkId: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY.value, "trunk_base"),
       standKeyId: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY.value, "STAND"),
@@ -377,8 +401,9 @@ async function boot({ scene, camera, renderer }) {
     };
   }
   // Active-variant address block, swapped wholesale by activateLoco.
-  let { qposAdr, dofAdr, gyroAdr, trunkId, standKeyId, ballQposAdr, ballDofAdr, extraJoints } =
+  let { qposAdr, dofAdr, ctrlAdr, gyroAdr, trunkId, standKeyId, ballQposAdr, ballDofAdr, extraJoints } =
     resolveAddrs(model, k);
+  let bamActuator = new BamM6Actuator({ qposAdr, dofAdr, ctrlAdr });
 
   // Locomotion variants stay resident once built (model + data + rig +
   // addresses); legs is registered when its render rig resolves below.
@@ -633,6 +658,7 @@ async function boot({ scene, camera, renderer }) {
     data.qpos[5] = 0;
     data.qpos[6] = Math.sin(heading / 2);
     mujoco.mj_forward(model, data);
+    bamActuator?.reset(data);
     lastAction.fill(0);
     sitFlag = 0;
     runCommandSpeed = VEL_FWD;
@@ -860,6 +886,7 @@ async function boot({ scene, camera, renderer }) {
           for (let j = 0; j < NUM_JOINTS; j++) {
             ctrl[j] = runClip.values[refStart + j] + act[j] * runtime.actionScale;
           }
+          if (bamActuator) bamActuator.setTarget(ctrl);
           if (runFrame + 1 === runClip.frames) wbcFinished = true;
           else wbcFrame = runFrame + 1;
         }
@@ -871,10 +898,12 @@ async function boot({ scene, camera, renderer }) {
         lastAction.set(act);
         const ctrl = data.ctrl;
         for (let j = 0; j < NUM_JOINTS; j++) ctrl[j] = DEFAULT_POSE[j] + act[j] * policy.scale;
+        if (bamActuator) bamActuator.setTarget(ctrl);
       }
     }
     for (let s = 0; s < DECIMATION; s++) {
       applyGrabForce(); // mouse perturbation, fresh velocity every substep
+      bamActuator?.apply(model, data);
       mujoco.mj_step(model, data);
     }
     // Match robotd's one-pass reference clock: the final CSV row owns one
@@ -1063,7 +1092,8 @@ async function boot({ scene, camera, renderer }) {
   let trunkGroup = rig.bodies.get("trunk_base");
   locos.legs = {
     model, data, rig, trunkGroup,
-    qposAdr, dofAdr, gyroAdr, trunkId, standKeyId, ballQposAdr, ballDofAdr, extraJoints,
+    qposAdr, dofAdr, ctrlAdr, gyroAdr, trunkId, standKeyId, ballQposAdr, ballDofAdr, extraJoints,
+    bamActuator,
   };
 
   const physicsSceneGeomNames = Object.fromEntries(
@@ -1108,6 +1138,7 @@ async function boot({ scene, camera, renderer }) {
       applyPhysicsScene(rModel, activeScene);
       locos.rollers = {
         model: rModel, data: rData, rig: rRig, trunkGroup: rRig.bodies.get("trunk_base"),
+        bamActuator: null,
         ...resolveAddrs(rModel, rk),
       };
     })();
@@ -1119,8 +1150,9 @@ async function boot({ scene, camera, renderer }) {
     loco = name;
     applyPhysicsScene(L.model, activeScene);
     scene.remove(rig.placer);
-    ({ model, data, rig, trunkGroup, qposAdr, dofAdr, gyroAdr, trunkId,
+    ({ model, data, rig, trunkGroup, qposAdr, dofAdr, ctrlAdr, gyroAdr, trunkId,
        standKeyId, ballQposAdr, ballDofAdr, extraJoints } = L);
+    bamActuator = L.bamActuator;
     // The rig may have been built (or last shown) under another colourway.
     applyVariant(rig, currentVariant);
     scene.add(rig.placer);
