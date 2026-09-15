@@ -495,9 +495,8 @@ async function boot({ scene, camera, renderer }) {
     return controller.getCommand();
   }
 
-  // Hold-to-sprint is keyboard-only. Touch is deliberately limited to the
-  // deployed drive/head/body-pose surface; the experimental RUN policy stays
-  // unavailable in the public UI.
+  // Hold-to-sprint is keyboard-only. Touch remains limited to the deployed
+  // drive/head/body-pose surface, while Shift selects the fixed-head sprint.
   function runForwardEligible() {
     return controlMode === "skills" && loco === "legs" && mode === "walk" &&
       !inputLocked && !recovery && postKickLock === 0 && !standTimer &&
@@ -2279,7 +2278,7 @@ async function boot({ scene, camera, renderer }) {
       : touchInputMode === "pose" || keyboardInputMode === "pose" ? "Pose"
       : sitting ? "Sit"
       : loco === "rollers" ? "Drive"
-      : "Run";
+      : "Sprint";
     if (store().modeLabel !== label) setStore({ modeLabel: label });
     if (store().ballActive !== ballActive) setStore({ ballActive });
   }

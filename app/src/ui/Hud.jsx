@@ -727,7 +727,7 @@ function ControlHints() {
       ]
     : [
         { caps: ["↑↓←→", `${labels.KeyW}${labels.KeyA}${labels.KeyS}${labels.KeyD}`], label: "Move" },
-        { caps: ["Shift", `${labels.KeyW} / ↑`], label: "Run 1.0" },
+        { caps: ["Shift", `${labels.KeyW} / ↑`], label: "Sprint cmd 2.2" },
         { caps: [labels.KeyX], label: "Roll" },
         { caps: [labels.KeyG], label: "Pick" },
         { caps: [labels.KeyQ, labels.KeyE], label: "Kick" },

@@ -23,7 +23,7 @@ export const useGame = create(
     bootFailed: false,
 
     // Game state mirrored for the UI
-    modeLabel: "Run",
+    modeLabel: "Sprint",
     loco: "legs", // "legs" | "rollers" - what the game is actually running
     locoWant: "legs", // what the quickbar asked for (game reconciles)
     locoSwitching: false,

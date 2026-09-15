@@ -19,8 +19,9 @@ export const POLICIES = {
   // skill; crouch remains catalogued for deployment-asset completeness.
   drive: `${POLICY_DIR}/BEST_roller.onnx`,
   crouch: `${POLICY_DIR}/BEST_roller_crouch.onnx`,
-  // Local v7 recovery-sprint policy.  It is intentionally outside
-  // OFFICIAL_POLICY_CATALOG: this browser asset is not a deployment claim.
+  // Verified DuckEMW sprint policy with world-stabilized head control. It is
+  // intentionally outside OFFICIAL_POLICY_CATALOG: this browser asset is not
+  // a deployment claim.
   run: `${POLICY_DIR}/run.onnx`,
 };
 
@@ -60,7 +61,7 @@ export const CMD_SIZE = 13;
 export const WALK_ACTION_SCALE = 0.9;
 export const ROLLER_ACTION_SCALE = 0.8;
 export const SKILL_ACTION_SCALE = 1.0;
-// The local v7 run ONNX declares action_scale=1.0.
+// The DuckEMW fixed-head sprint ONNX declares action_scale=1.0.
 export const RUN_ACTION_SCALE = 1.0;
 export const STANDING_THRESHOLD = 0.05;
 export const TIMESTEP = 0.005;
@@ -70,12 +71,14 @@ export const CTRL_DT = TIMESTEP * DECIMATION; // 50 Hz
 // Velocity command limits, same as infer_policy.py's keyboard mapping.
 // No strafe input anymore: the lateral cmd slot stays zeroed for the obs.
 export const VEL_FWD = 0.25, VEL_BACK = -0.2, VEL_ANG = 1.0;
-// Shift runs the v7 sprint policy through a command ramp.  Its command
-// ceiling is synchronized with the policy's 0.90 m/s training envelope.
-// At 50 Hz, the 0.01 m/s² slope takes 65 s from walk to that target.
-export const RUN_VEL_FWD = 0.9;
-export const RUN_ACCEL_MPS2 = 0.01;
-export const RUN_DECEL_MPS2 = 0.01;
+// Shift runs the verified DuckEMW fixed-head sprint through a command ramp.
+// 2.2 m/s is its deterministic evaluation command; it avoids exposing the
+// browser to the unvalidated tail of the 2.5 m/s training curriculum. The
+// 0.60 m/s² ramp reaches it from walking in about 3.25 seconds, matching the
+// command changes exercised during training.
+export const RUN_VEL_FWD = 2.2;
+export const RUN_ACCEL_MPS2 = 0.60;
+export const RUN_DECEL_MPS2 = 0.60;
 // Roller mode limits, from the runtime's roller branch: asymmetric vx
 // (0.6 push / 0.5 brake), no lateral. The real runtime launches rollers
 // with --max-angular-vel 0.3: faster commanded turns tip the robot over,
