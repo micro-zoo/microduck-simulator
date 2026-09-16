@@ -15,23 +15,6 @@ import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
 
 const MOVE_LABELS = ["Bounce", "Shift", "Head bob", "Climax", "Call out"];
 
-const panelSx = {
-  position: "fixed",
-  left: "1.5rem",
-  bottom: "1.15rem",
-  zIndex: 11,
-  width: "min(25rem, calc(100vw - 3rem))",
-  border: `2px solid ${CREAM}`,
-  boxShadow: `3px 3px 0 ${COMIC_INK}, inset 0 0 0 1px ${COMIC_INK}`,
-  background: "rgba(8, 8, 12, 0.91)",
-  color: CREAM,
-  "@media (max-width: 900px)": {
-    bottom: "5.35rem",
-    left: "1rem",
-    width: "min(25rem, calc(100vw - 2rem))",
-  },
-};
-
 const buttonSx = {
   appearance: "none",
   border: `1px solid ${CREAM}`,
@@ -58,11 +41,14 @@ const formatTime = (seconds = 0) => {
 const confidenceLabel = (confidence) => confidence >= 0.3 ? "strong" : confidence >= 0.12 ? "usable" : "check beats";
 
 export default function DanceDeck() {
+  const entered = useGame((s) => s.entered);
+  const menuOpen = useGame((s) => s.menuOpen);
+  const touchMode = useGame((s) => s.touchMode);
+  const dancePanelOpen = useGame((s) => s.dancePanelOpen);
   const danceLoading = useGame((s) => s.danceLoading);
   const danceError = useGame((s) => s.danceError);
   const danceStatus = useGame((s) => s.danceStatus);
   const danceMove = useGame((s) => s.danceMove);
-  const [open, setOpen] = useState(false);
   const [file, setFile] = useState(null);
   const [timeline, setTimeline] = useState(null);
   const [analysis, setAnalysis] = useState(null);
@@ -116,6 +102,12 @@ export default function DanceDeck() {
     setPlaying(false);
     stopController();
   };
+
+  // The pause/title overlay owns the whole game.  Do not leave local music
+  // or a dance policy running invisibly behind it.
+  useEffect(() => {
+    if (menuOpen && playing) stop();
+  }, [menuOpen, playing]); // `stop` intentionally reads the current audio ref.
 
   const selectFile = (event) => {
     const nextFile = event.target.files?.[0] ?? null;
@@ -203,25 +195,63 @@ export default function DanceDeck() {
   const totalDuration = timeline?.duration ?? 0;
   const progress = totalDuration ? Math.min(100, (time / totalDuration) * 100) : 0;
   const shownError = error || danceError;
+  const visible = entered && !menuOpen;
+  const panelSx = touchMode ? {
+    position: "fixed",
+    inset: "0.7rem",
+    zIndex: 30,
+    display: visible && dancePanelOpen ? "block" : "none",
+    overflowY: "auto",
+    overscrollBehavior: "contain",
+    touchAction: "pan-y",
+    border: `2px solid ${CREAM}`,
+    boxShadow: `4px 4px 0 ${COMIC_INK}`,
+    background: "rgba(8, 8, 12, 0.97)",
+    color: CREAM,
+  } : {
+    position: "fixed",
+    top: "5.2rem",
+    left: "50%",
+    zIndex: 12,
+    display: visible && dancePanelOpen ? "block" : "none",
+    width: "min(28rem, calc(100vw - 3rem))",
+    maxHeight: "calc(100vh - 6.4rem)",
+    overflowY: "auto",
+    transform: "translateX(-50%)",
+    border: `2px solid ${CREAM}`,
+    boxShadow: `3px 3px 0 ${COMIC_INK}, inset 0 0 0 1px ${COMIC_INK}`,
+    background: "rgba(8, 8, 12, 0.95)",
+    color: CREAM,
+    "@media (max-width: 1150px)": {
+      top: "9.15rem",
+      maxHeight: "calc(100vh - 10.3rem)",
+    },
+  };
 
   return (
-    <Box sx={panelSx} aria-label="Dance Lab">
+    <Box
+      role={touchMode ? "dialog" : undefined}
+      aria-modal={touchMode ? "true" : undefined}
+      aria-label="Dance controls"
+      aria-hidden={!visible || !dancePanelOpen}
+      onPointerDown={(event) => event.stopPropagation()}
+      sx={panelSx}
+    >
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: "2.7rem", px: "0.72rem", background: ORANGE, color: COMIC_INK }}>
         <Box>
           <Typography component="div" sx={{ fontFamily: ANTON, fontSize: "0.93rem", letterSpacing: "0.1em", lineHeight: 1 }}>
-            Dance Lab
+            Dance
           </Typography>
           <Typography component="div" sx={{ mt: "0.14rem", fontFamily: MONO, fontSize: "0.49rem", letterSpacing: "0.08em", lineHeight: 1.2 }}>
             LOCAL AUDIO · BEAT + ENERGY CHOREOGRAPHY
           </Typography>
         </Box>
-        <Box component="button" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} sx={{ ...buttonSx, minHeight: "1.72rem", borderColor: COMIC_INK, color: COMIC_INK, "&:hover:not(:disabled)": { color: COMIC_INK, background: "rgba(255,255,255,0.25)" } }}>
-          {open ? "Hide" : "Open"}
+        <Box component="button" type="button" onClick={() => useGame.setState({ dancePanelOpen: false })} aria-label="Close Dance controls" sx={{ ...buttonSx, minHeight: "1.72rem", borderColor: COMIC_INK, color: COMIC_INK, "&:hover:not(:disabled)": { color: COMIC_INK, background: "rgba(255,255,255,0.25)" } }}>
+          Close
         </Box>
       </Box>
 
-      {open ? (
-        <Box sx={{ p: "0.74rem" }}>
+      <Box sx={{ p: "0.74rem" }}>
           <Typography sx={{ mb: "0.58rem", color: "rgba(250,248,242,0.72)", fontSize: "0.72rem", lineHeight: 1.45 }}>
             Choose a track. It is decoded only in this browser, then mapped to a 90–140 BPM dance timeline.
           </Typography>
@@ -294,8 +324,7 @@ export default function DanceDeck() {
 
           {shownError ? <Box role="alert" sx={{ mt: "0.55rem", color: "#ff8c8c", fontFamily: MONO, fontSize: "0.59rem", lineHeight: 1.35 }}>{shownError}</Box> : null}
           {danceStatus === "dancing" && danceMove ? <Box sx={{ mt: "0.5rem", color: ORANGE, fontFamily: MONO, fontSize: "0.55rem", letterSpacing: "0.08em", textTransform: "uppercase" }}>Now: {danceMove.replaceAll("_", " ")}</Box> : null}
-        </Box>
-      ) : null}
+      </Box>
     </Box>
   );
 }

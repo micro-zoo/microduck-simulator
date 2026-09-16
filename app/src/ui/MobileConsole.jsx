@@ -95,6 +95,8 @@ export default function MobileConsole() {
   const wbcError = useGame((s) => s.wbcError);
   const wbcClip = useGame((s) => s.wbcClip);
   const wbcClips = useGame((s) => s.wbcClips);
+  const dancePanelOpen = useGame((s) => s.dancePanelOpen);
+  const danceStatus = useGame((s) => s.danceStatus);
   const modeLabel = useGame((s) => s.modeLabel);
   const touchInputMode = useGame((s) => s.touchInputMode);
   const mouthOpen = useGame((s) => s.mouthOpen);
@@ -273,6 +275,20 @@ export default function MobileConsole() {
               onChange={(next) => gameApi.requestControlMode?.(next)}
               items={[{ value: "skills", label: "Skills" }, { value: "wbc", label: "WBC" }]}
             />
+            <Box
+              component="button"
+              type="button"
+              aria-pressed={dancePanelOpen}
+              onClick={() => useGame.setState({ dancePanelOpen: true })}
+              sx={{
+                ...panelButtonSx,
+                width: "100%",
+                background: dancePanelOpen || danceStatus === "dancing" ? ORANGE : "rgba(250, 248, 242, 0.08)",
+                color: dancePanelOpen || danceStatus === "dancing" ? INK : CREAM,
+              }}
+            >
+              Dance · local music
+            </Box>
             {controlMode === "wbc" || wbcLoading ? (
               <Box
                 component="select"

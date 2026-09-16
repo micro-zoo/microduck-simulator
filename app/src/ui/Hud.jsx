@@ -20,7 +20,6 @@ import { SCENE_IDS, SCENES } from "../game/scenes.js";
 import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
 import { readLayoutMap, resolveKeycaps } from "./keyboard-layout.js";
-import DanceDeck from "./DanceDeck.jsx";
 
 const HUD_CONTROL_CODES = ["KeyX", "KeyG", "KeyQ", "KeyE", "KeyR", "KeyM", "KeyC", "KeyV", "KeyH", "KeyP", "KeyI", "KeyJ", "KeyK", "KeyL"];
 
@@ -277,6 +276,8 @@ function Quickbar() {
   const wbcLoading = useGame((s) => s.wbcLoading);
   const wbcClip = useGame((s) => s.wbcClip);
   const wbcClips = useGame((s) => s.wbcClips);
+  const dancePanelOpen = useGame((s) => s.dancePanelOpen);
+  const danceStatus = useGame((s) => s.danceStatus);
   const keyboardInputMode = useGame((s) => s.keyboardInputMode);
   const mouthOpen = useGame((s) => s.mouthOpen);
   const selectedControl = wbcLoading ? "wbc" : controlMode;
@@ -452,6 +453,25 @@ function Quickbar() {
               </Box>
             );
           })}
+          <Box
+            component="button"
+            type="button"
+            aria-pressed={dancePanelOpen}
+            onClick={() => useGame.setState({ dancePanelOpen: !dancePanelOpen })}
+            sx={{
+              ...hudHitSx,
+              px: "1.05rem",
+              background: dancePanelOpen || danceStatus === "dancing" ? ORANGE : "transparent",
+              color: dancePanelOpen || danceStatus === "dancing" ? COMIC_INK : "rgba(250, 248, 242, 0.72)",
+              "&:hover": {
+                color: dancePanelOpen || danceStatus === "dancing" ? COMIC_INK : CREAM,
+                background: dancePanelOpen || danceStatus === "dancing" ? ORANGE : "rgba(255, 122, 47, 0.12)",
+              },
+              "&:active": { filter: "brightness(0.92)" },
+            }}
+          >
+            Dance
+          </Box>
         </Box>
       </HudPlate>
       <HudPlate caption="Input">
@@ -786,7 +806,6 @@ export default function Hud() {
     <>
       <BackButton />
       <CommunityLinks />
-      <DanceDeck />
       {!touchMode && (
         <>
           <Quickbar />

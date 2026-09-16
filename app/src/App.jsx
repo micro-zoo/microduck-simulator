@@ -7,6 +7,7 @@ import GameCanvas from "./scene/GameCanvas.jsx";
 import { Halftone, CrtOverlay } from "./ui/Overlays.jsx";
 import Hud from "./ui/Hud.jsx";
 import MobileConsole from "./ui/MobileConsole.jsx";
+import DanceDeck from "./ui/DanceDeck.jsx";
 import TouchOverlay from "./ui/TouchOverlay.jsx";
 import BiosOverlay from "./ui/BiosOverlay.jsx";
 import TitleMenu from "./ui/TitleMenu.jsx";
@@ -81,6 +82,7 @@ export default function App() {
       <Hud />
       <MobileConsole />
       <TouchOverlay />
+      <DanceDeck />
       <BiosOverlay />
       <TitleMenu />
       <Preboot />

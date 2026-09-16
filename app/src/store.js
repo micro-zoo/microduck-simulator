@@ -45,6 +45,7 @@ export const useGame = create(
     danceStatus: "idle", // "idle" | "loading" | "dancing" | "stopped"
     danceBpm: null,
     danceMove: "",
+    dancePanelOpen: false,
     variant: "classic",
     padConnected: false,
     touchMode: false,
