@@ -28,6 +28,7 @@ import { signed } from "./signed.js";
 import {
   POLICIES, JOINT_NAMES, DEFAULT_POSE, NUM_JOINTS, OBS_SIZE, CMD_SIZE,
   WALK_ACTION_SCALE, ROLLER_ACTION_SCALE, SKILL_ACTION_SCALE, RUN_ACTION_SCALE,
+  DANCE_ACTION_SCALE,
   STANDING_THRESHOLD,
   TIMESTEP, DECIMATION, CTRL_DT,
   VEL_FWD, VEL_BACK, VEL_ANG, RVEL_FWD, RVEL_BACK, RVEL_ANG,
@@ -37,6 +38,7 @@ import {
 } from "./constants.js";
 import { advanceRunRamp } from "./run-ramp.js";
 import { BAM_M6, BamM6Actuator } from "./bam-actuator.js";
+import { DANCE_MOVES, writeDanceCommand } from "./dance-analysis.js";
 import { loadProps, propColliders } from "./props.js";
 import {
   DEFAULT_SCENE, SCENES, SCENE_IDS,
@@ -451,7 +453,7 @@ async function boot({ scene, camera, renderer }) {
   let ball = null;
   let stickers = null; // comic popups, currently disabled
 
-  let mode = "walk"; // "walk" | "sitstand" | "roll" | "kickL" | "kickR" | "groundpick"
+  let mode = "walk"; // "walk" | "sitstand" | "roll" | "kickL" | "kickR" | "groundpick" | "dance"
   let sitFlag = 0;
   const isKick = () => mode === "kickL" || mode === "kickR";
 
@@ -467,6 +469,14 @@ async function boot({ scene, camera, renderer }) {
   let wbcObs = null;
   let wbcRequest = 0;
   let controlEpoch = 0;
+
+  // The dance session is lazy because it is only useful once the user picks
+  // local audio.  `clock` returns HTMLAudioElement.currentTime, so the policy
+  // follows the actual media clock rather than an approximate simulation timer.
+  let danceSession = null;
+  let danceLoading = null;
+  let danceRequest = 0;
+  let danceRun = null; // { timeline, clock, pauseAudio }
 
   // Head/Pose modes keep left-stick velocity live and route the right stick
   // into command slots. Head targets are stick * HEAD_MAX and EMA-smoothed
@@ -565,6 +575,22 @@ async function boot({ scene, camera, renderer }) {
     clearTimeout(standTimer); standTimer = null;
   }
 
+  function finishDance({ reason = "stopped", pauseAudio = false } = {}) {
+    const run = danceRun;
+    if (!run) return;
+    danceRun = null;
+    if (mode === "dance") mode = "walk";
+    if (pauseAudio) run.pauseAudio?.();
+    setStore({
+      danceLoading: false,
+      danceError: null,
+      danceStatus: reason,
+      danceBpm: run.timeline.bpm,
+      danceMove: "",
+    });
+    syncButtons();
+  }
+
   // ── Mouse grab, physics side (MuJoCo-viewer-style perturbation) ───────
   // While a grab is live, EVERY PHYSICS SUBSTEP writes a spring-damper
   // force on the grabbed free body via xfrc_applied (world frame),
@@ -616,8 +642,12 @@ async function boot({ scene, camera, renderer }) {
     grab = null;
   }
 
-  function resetSim() {
+  function resetSim({ playCeremony = true } = {}) {
     controlEpoch++;
+    // Reset is a hard ownership transfer back to manual skills.  Keeping the
+    // audio playing while the policy is reset would make the next play start
+    // out of phase, so pause it through the UI-owned callback as well.
+    finishDance({ pauseAudio: true });
     waypointSource.cancel();
     // A live grab must not survive a reset: the per-step spring would
     // immediately yank the respawned duck toward the stale cursor target.
@@ -672,7 +702,7 @@ async function boot({ scene, camera, renderer }) {
       setStore({ wbcProgress: { frame: 0, frames: wbcClip?.frames ?? 0 } });
     }
     syncButtons();
-    ceremony?.playRespawn();
+    if (playCeremony) ceremony?.playRespawn();
   }
   resetSim();
 
@@ -744,41 +774,53 @@ async function boot({ scene, camera, renderer }) {
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = qpos[qposAdr[j]] - DEFAULT_POSE[j];
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = qvel[dofAdr[j]];
     for (let j = 0; j < NUM_JOINTS; j++) obs[i++] = lastAction[j];
-    const runCommand = stepRunCommand();
-    // command: walking/drive use the twist; sitstand uses cmd[0] as the
-    // posture flag; ground pick carries its phase encoding in the velocity
-    // slots ([cos, sin, 0]).
-    cmd.fill(0, 0, 3);
-    if (mode === "sitstand") {
-      cmd[0] = sitFlag;
-    } else if (mode === "groundpick" && pickRun) {
-      const a = 2 * Math.PI * pickRun.phase;
-      cmd[0] = Math.cos(a);
-      cmd[1] = Math.sin(a);
-    } else if (runCommand.policyActive) {
-      cmd[0] = runCommand.speed;
+    if (mode === "dance" && danceRun) {
+      // Exact training layout: command[7:13] is
+      // [sin(half-beat-phase), cos(...), BPM/120, three move-id bits].
+      // Twist and head slots stay zero, as they did in the dance env.
+      const move = writeDanceCommand(cmd, danceRun.timeline, danceRun.clock());
+      if (move !== danceRun.move) {
+        danceRun.move = move;
+        setStore({ danceMove: DANCE_MOVES[move] });
+      }
     } else {
-      const c = effectiveCmd();
-      cmd[0] = c[0]; cmd[1] = c[1]; cmd[2] = c[2];
+      const runCommand = stepRunCommand();
+      // command: walking/drive use the twist; sitstand uses cmd[0] as the
+      // posture flag; ground pick carries its phase encoding in the velocity
+      // slots ([cos, sin, 0]).  Clear all 13 values so a stopped dance cannot
+      // leave an old phase or move bit in another policy's observation.
+      cmd.fill(0);
+      if (mode === "sitstand") {
+        cmd[0] = sitFlag;
+      } else if (mode === "groundpick" && pickRun) {
+        const a = 2 * Math.PI * pickRun.phase;
+        cmd[0] = Math.cos(a);
+        cmd[1] = Math.sin(a);
+      } else if (runCommand.policyActive) {
+        cmd[0] = runCommand.speed;
+      } else {
+        const c = effectiveCmd();
+        cmd[0] = c[0]; cmd[1] = c[1]; cmd[2] = c[2];
+      }
+      // Head slots cmd[3..6]: EMA toward the stick targets at 50 Hz (this
+      // runs once per control step), exactly the runtime's smoothing. Kept
+      // filled outside head mode too - offsets persist like on the robot.
+      for (let h = 0; h < 4; h++) headSmooth[h] += HEAD_ALPHA * (headTarget[h] - headSmooth[h]);
+      // Ground pick parity: the runtime zero-pads the head (and body) slots
+      // for its obs (mjlab's zero_command_padding), so persisted head
+      // offsets must not leak into the pick policy's command buffer. Fall
+      // recovery zeroes them too: the stand policy gets an all-zero command.
+      const gpZero = mode === "groundpick" || recovery !== null;
+      cmd[3] = gpZero ? 0 : headSmooth[0]; cmd[4] = gpZero ? 0 : headSmooth[1];
+      cmd[5] = gpZero ? 0 : headSmooth[2]; cmd[6] = gpZero ? 0 : headSmooth[3];
+      // Body pose is the other deployed continuous command. Unlike head
+      // offsets it only lives while its mode is active; exit clears both
+      // target and EMA so the robot returns to nominal immediately.
+      for (let b = 0; b < 3; b++) bodySmooth[b] += HEAD_ALPHA * (bodyTarget[b] - bodySmooth[b]);
+      cmd[9] = gpZero ? 0 : bodySmooth[0];
+      cmd[10] = gpZero ? 0 : bodySmooth[1];
+      cmd[11] = gpZero ? 0 : bodySmooth[2];
     }
-    // Head slots cmd[3..6]: EMA toward the stick targets at 50 Hz (this
-    // runs once per control step), exactly the runtime's smoothing. Kept
-    // filled outside head mode too - offsets persist like on the robot.
-    for (let h = 0; h < 4; h++) headSmooth[h] += HEAD_ALPHA * (headTarget[h] - headSmooth[h]);
-    // Ground pick parity: the runtime zero-pads the head (and body) slots
-    // for its obs (mjlab's zero_command_padding), so persisted head
-    // offsets must not leak into the pick policy's command buffer. Fall
-    // recovery zeroes them too: the stand policy gets an all-zero command.
-    const gpZero = mode === "groundpick" || recovery !== null;
-    cmd[3] = gpZero ? 0 : headSmooth[0]; cmd[4] = gpZero ? 0 : headSmooth[1];
-    cmd[5] = gpZero ? 0 : headSmooth[2]; cmd[6] = gpZero ? 0 : headSmooth[3];
-    // Body pose is the other deployed continuous command. Unlike head
-    // offsets it only lives while its mode is active; exit clears both
-    // target and EMA so the robot returns to nominal immediately.
-    for (let b = 0; b < 3; b++) bodySmooth[b] += HEAD_ALPHA * (bodyTarget[b] - bodySmooth[b]);
-    cmd[9] = gpZero ? 0 : bodySmooth[0];
-    cmd[10] = gpZero ? 0 : bodySmooth[1];
-    cmd[11] = gpZero ? 0 : bodySmooth[2];
     for (let c = 0; c < CMD_SIZE; c++) obs[i++] = cmd[c];
     return obs;
   }
@@ -813,6 +855,9 @@ async function boot({ scene, camera, renderer }) {
   // intentionally one self-contained skill: drive owns every roller tick,
   // and action inputs cannot schedule a second policy on top of it.
   const activePolicy = () => {
+    if (mode === "dance" && danceRun && danceSession) {
+      return { id: "dance", session: danceSession, scale: DANCE_ACTION_SCALE };
+    }
     if (recovery?.state === "recovering") {
       return { id: "stand", session: sessions.stand, scale: SKILL_ACTION_SCALE };
     }
@@ -905,6 +950,12 @@ async function boot({ scene, camera, renderer }) {
       applyGrabForce(); // mouse perturbation, fresh velocity every substep
       bamActuator?.apply(model, data);
       mujoco.mj_step(model, data);
+    }
+    // The audio element owns the clock.  Its ended event also reaches the UI,
+    // but this guard prevents the robot from holding the final beat if an
+    // event is delayed by a background tab.
+    if (danceRun && mode === "dance" && danceRun.clock() >= danceRun.timeline.duration) {
+      finishDance({ reason: "stopped", pauseAudio: true });
     }
     // Match robotd's one-pass reference clock: the final CSV row owns one
     // complete control period, then control returns through the Skills/HOME
@@ -1163,6 +1214,7 @@ async function boot({ scene, camera, renderer }) {
   let locoSwitching = false;
   async function setLoco(name, { force = false } = {}) {
     if (name !== "legs" && name !== "rollers") return;
+    if (name !== "legs" && danceRun) finishDance({ pauseAudio: true });
     if (name === "rollers" && controlMode === "wbc") {
       // WBC was trained for the leg model. A roller request is also an
       // explicit request to return ownership to the regular skill stack.
@@ -1195,6 +1247,76 @@ async function boot({ scene, camera, renderer }) {
     await setLoco(next);
   }
 
+  // ── Beat-conditioned dance policy (lazy, local audio only) ─────────
+  function validateDanceTimeline(timeline) {
+    if (!timeline || !Number.isFinite(timeline.bpm) || !Number.isFinite(timeline.t0) ||
+        !Number.isFinite(timeline.duration) || !Array.isArray(timeline.segments) ||
+        timeline.segments.length === 0) {
+      throw new Error("Dance Lab received an invalid timeline");
+    }
+    if (timeline.bpm < 90 || timeline.bpm > 140) {
+      throw new Error(`Dance BPM must stay inside the trained 90–140 range (got ${timeline.bpm})`);
+    }
+    for (const segment of timeline.segments) {
+      if (!Number.isInteger(segment.move) || segment.move < 0 || segment.move >= DANCE_MOVES.length) {
+        throw new Error(`Dance timeline has an unsupported move (${segment.move})`);
+      }
+    }
+  }
+
+  function ensureDance() {
+    if (danceSession) return Promise.resolve(danceSession);
+    danceLoading ??= ort.InferenceSession.create(signed(POLICIES.dance), sessionOpts)
+      .then((session) => {
+        danceSession = session;
+        return session;
+      })
+      .catch((error) => {
+        danceLoading = null;
+        throw error;
+      });
+    return danceLoading;
+  }
+
+  async function startDance(timeline, { clock, pauseAudio } = {}) {
+    validateDanceTimeline(timeline);
+    if (typeof clock !== "function") throw new Error("Dance Lab needs an audio playback clock");
+    const request = ++danceRequest;
+    setStore({ danceLoading: true, danceError: null, danceStatus: "loading", danceBpm: timeline.bpm });
+    try {
+      // WBC owns a different observation/control contract.  Dancing is a
+      // 61D Skills policy, and it always uses the leg model it was trained on.
+      if (controlMode === "wbc") await setControlMode("skills");
+      if (request !== danceRequest) return false;
+      if (loco !== "legs") {
+        setStore({ locoWant: "legs" });
+        await setLoco("legs", { force: true });
+      }
+      if (request !== danceRequest) return false;
+      await ensureDance();
+      if (request !== danceRequest) return false;
+      resetSim({ playCeremony: false });
+      danceRun = { timeline, clock, pauseAudio, move: -1 };
+      mode = "dance";
+      lastAction.fill(0);
+      setStore({
+        danceLoading: false,
+        danceError: null,
+        danceStatus: "dancing",
+        danceBpm: timeline.bpm,
+        danceMove: DANCE_MOVES[timeline.segments[0].move],
+      });
+      syncButtons();
+      return true;
+    } catch (error) {
+      if (request !== danceRequest) return false;
+      const message = error?.message || String(error);
+      console.error("[game] dance setup failed", error);
+      setStore({ danceLoading: false, danceError: message, danceStatus: "idle" });
+      return false;
+    }
+  }
+
   // ── WBC policy + reference stream (lazy) ───────────────────────────
   function ensureWbc() {
     if (wbcBundle) return Promise.resolve(wbcBundle);
@@ -1224,7 +1346,10 @@ async function boot({ scene, camera, renderer }) {
 
   async function setControlMode(next) {
     if (next !== "skills" && next !== "wbc") return;
-    if (next === "wbc") clearOperatorInputModes();
+    if (next === "wbc") {
+      finishDance({ pauseAudio: true });
+      clearOperatorInputModes();
+    }
     const request = ++wbcRequest;
     if (next === "skills") {
       const changed = controlMode !== "skills";
@@ -2198,6 +2323,7 @@ async function boot({ scene, camera, renderer }) {
     if (controlMode !== "skills") return;
     if (loco !== "legs") return;
     if (inputLocked) return;
+    if (mode === "dance") finishDance({ pauseAudio: true });
     // No policy switching mid-roll or mid-kick: both end on their own and
     // return to walk - switching now would floor the duck. Same while the
     // fall-recovery state machine owns the duck.
@@ -2284,6 +2410,7 @@ async function boot({ scene, camera, renderer }) {
     const sitting = mode === "sitstand" && sitFlag === 1;
     const label =
       controlMode === "wbc" ? "WBC"
+      : mode === "dance" ? "Dance"
       : recovery ? "Recovery"
       : mode === "roll" ? "Roll"
       : mode === "groundpick" ? "Pick"
@@ -2316,6 +2443,8 @@ async function boot({ scene, camera, renderer }) {
     requestScene: (sceneId) => { void setScene(sceneId); },
     requestControlMode: (name) => { void setControlMode(name); },
     requestWbcClip: (id) => { void setWbcClip(id); },
+    startDance: (timeline, options) => startDance(timeline, options),
+    stopDance: (options = {}) => finishDance({ reason: "stopped", ...options }),
     triggerAction: (action) => {
       switch (action) {
         case "roll": triggerRoll("touch"); break;
@@ -2376,6 +2505,8 @@ async function boot({ scene, camera, renderer }) {
     get wbcClip() { return wbcClip; },
     get wbcFrame() { return wbcFrame; },
     buildWbcObs, ensureWbc, setControlMode, setWbcClip,
+    ensureDance, startDance, stopDance: finishDance,
+    get danceTimeline() { return danceRun?.timeline ?? null; },
     triggerGroundPick,
     get groundPickPhase() { return pickRun?.phase ?? null; },
     get kickSteps() { return KICK_STEPS; },

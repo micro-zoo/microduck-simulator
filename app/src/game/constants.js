@@ -23,6 +23,10 @@ export const POLICIES = {
   // intentionally outside OFFICIAL_POLICY_CATALOG: this browser asset is not
   // a deployment claim.
   run: `${POLICY_DIR}/run.onnx`,
+  // Beat-conditioned policy trained in this workspace.  It is intentionally
+  // not added to OFFICIAL_POLICY_CATALOG: Dance Lab is a local-media demo,
+  // not part of the robot's deployed policy inventory.
+  dance: `${POLICY_DIR}/microduck_dance_4000.onnx`,
 };
 
 // The complete 61D policy set resolved by microduck/robotd-params. Keep
@@ -63,6 +67,7 @@ export const ROLLER_ACTION_SCALE = 0.8;
 export const SKILL_ACTION_SCALE = 1.0;
 // The DuckEMW fixed-head sprint ONNX declares action_scale=1.0.
 export const RUN_ACTION_SCALE = 1.0;
+export const DANCE_ACTION_SCALE = 1.0;
 export const STANDING_THRESHOLD = 0.05;
 export const TIMESTEP = 0.005;
 export const DECIMATION = 4;

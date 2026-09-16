@@ -20,6 +20,7 @@ import { SCENE_IDS, SCENES } from "../game/scenes.js";
 import { ORANGE, MONO } from "../theme.js";
 import { ANTON, COMIC_INK, CREAM } from "./comic.jsx";
 import { readLayoutMap, resolveKeycaps } from "./keyboard-layout.js";
+import DanceDeck from "./DanceDeck.jsx";
 
 const HUD_CONTROL_CODES = ["KeyX", "KeyG", "KeyQ", "KeyE", "KeyR", "KeyM", "KeyC", "KeyV", "KeyH", "KeyP", "KeyI", "KeyJ", "KeyK", "KeyL"];
 
@@ -785,6 +786,7 @@ export default function Hud() {
     <>
       <BackButton />
       <CommunityLinks />
+      <DanceDeck />
       {!touchMode && (
         <>
           <Quickbar />

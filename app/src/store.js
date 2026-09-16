@@ -38,6 +38,13 @@ export const useGame = create(
     wbcClip: "",
     wbcClips: [],
     wbcProgress: { frame: 0, frames: 0 },
+    // Local Audio / Dance Lab.  Audio bytes never enter this store (or leave
+    // the browser); it only mirrors the controller's live state for the UI.
+    danceLoading: false,
+    danceError: null,
+    danceStatus: "idle", // "idle" | "loading" | "dancing" | "stopped"
+    danceBpm: null,
+    danceMove: "",
     variant: "classic",
     padConnected: false,
     touchMode: false,
