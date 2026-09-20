@@ -316,12 +316,6 @@ function CanvasPanel({ colors, selectedId, exportRef, action, loading, error, on
   return (
     <Box component="main" sx={{ gridArea: "preview", position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden", background: "#0b0b10" }}>
       <HalftoneRamp color="rgba(255, 122, 47, 0.09)" size={22} corner="bottom-left" reach={72} />
-      <Typography aria-hidden sx={{ position: "absolute", zIndex: 0, left: { xs: 18, md: 34 }, top: { xs: 24, md: 36 }, fontFamily: ANTON, fontSize: "clamp(3.4rem, 8vw, 7rem)", lineHeight: 0.82, color: "rgba(255,255,255,0.035)", textTransform: "uppercase", whiteSpace: "pre-line", userSelect: "none" }}>
-        {"MAKE IT\nYOURS."}
-      </Typography>
-      <Box sx={{ position: "absolute", zIndex: 2, top: 20, left: 22, px: "0.65rem", py: "0.35rem", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(8,8,12,0.72)", fontFamily: MONO, fontSize: "0.64rem", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.56)" }}>
-        Live 3D preview
-      </Box>
 
       <Canvas camera={{ fov: 34, near: 0.01, far: 50 }} dpr={[1, 1.75]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
         <ambientLight intensity={1.45} />
@@ -615,7 +609,6 @@ export default function Customizer() {
           <Box component="img" src={signed("./assets/duck-head-mark.webp")} alt="" sx={{ width: { xs: 32, md: 38 }, height: { xs: 26, md: 30 }, objectFit: "contain", filter: "drop-shadow(2px 2px 0 rgba(0,0,0,.5))" }} />
           <Typography sx={{ display: { xs: "none", sm: "block" }, fontFamily: ANTON, fontSize: "1.2rem", letterSpacing: "0.025em", textTransform: "uppercase" }}>Microduck</Typography>
         </Box>
-        <Box sx={{ width: 1, height: 24, background: "rgba(255,255,255,0.16)" }} />
         <Typography sx={{ fontFamily: MONO, fontSize: { xs: "0.66rem", sm: "0.72rem" }, fontWeight: 700, letterSpacing: "0.13em", textTransform: "uppercase", color: "rgba(255,255,255,0.58)" }}>Color Studio</Typography>
         <Typography sx={{ display: { xs: "none", lg: "block" }, ml: "auto", mr: "auto", fontSize: "0.78rem", color: "rgba(255,255,255,0.34)" }}>Make the hardware unmistakably yours.</Typography>
         <Box component="button" type="button" aria-label="Run this design in the simulator" disabled={!ready} onClick={runInSimulator} sx={{ ml: { xs: "auto", lg: 0 }, ...smallButtonSx, minHeight: { xs: 36, md: 42 }, px: { xs: 0.65, md: 0.9 }, display: "flex", alignItems: "center", gap: "0.45rem", background: CREAM, boxShadow: `4px 4px 0 ${ORANGE}`, opacity: !ready ? 0.55 : 1 }}>
