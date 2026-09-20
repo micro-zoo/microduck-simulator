@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
-import { createThreeMf } from "../src/customizer/three-mf.js";
+import { createThreeMf, createThreeMfBundle } from "../src/customizer/three-mf.js";
 
 test("3MF export creates an OPC zip with model geometry and color", () => {
   const root = new THREE.Group();
@@ -62,4 +62,37 @@ test("3MF export names exact Bambu PLA Basic material colours", () => {
 
   assert.match(binary, /Bambu PLA Basic · 10300 · Orange/);
   assert.match(binary, /displaycolor="#FF6A13FF"/);
+});
+
+test("ZIP bundle includes a complete model and absolutely numbered parts grouped by Bambu colour", () => {
+  const root = new THREE.Group();
+  const addPart = (meshName, label, color) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 0.01, 0.01),
+      new THREE.MeshStandardMaterial({ color }),
+    );
+    mesh.userData.meshName = meshName;
+    mesh.userData.partLabel = label;
+    root.add(mesh);
+    return mesh;
+  };
+  addPart("head.stl", "Head shell", "#ff6a13");
+  addPart("hip.stl", "Hip cover", "#000000");
+  addPart("hip.stl", "Hip cover", "#000000");
+
+  const bundle = createThreeMfBundle({
+    root,
+    meshOrder: ["head.stl", "hip.stl", "hip.stl"],
+  });
+  const binary = Buffer.from(bundle.bytes).toString("latin1");
+
+  assert.equal(bundle.partCount, 3);
+  assert.equal(bundle.colorCount, 2);
+  assert.deepEqual(bundle.manifest.map((part) => part.absoluteNumber), ["01", "02", "03"]);
+  assert.match(binary, /duck-complete\.3mf/);
+  assert.match(binary, /parts\.csv/);
+  assert.match(binary, /parts\/10300\/duck-01-10300\.3mf/);
+  assert.match(binary, /parts\/10101\/duck-02-10101\.3mf/);
+  assert.match(binary, /parts\/10101\/duck-03-10101\.3mf/);
+  assert.match(binary, /absolute_number,filename,part,source_mesh,bambu_color_code/);
 });

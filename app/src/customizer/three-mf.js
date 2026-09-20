@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { bambuLabel, exactBambuColor } from "./bambu-colors.js";
+import { bambuLabel, closestBambuColor, exactBambuColor } from "./bambu-colors.js";
 
 const encoder = new TextEncoder();
 
@@ -63,11 +63,12 @@ function geometryRecord(mesh, { textured = false } = {}) {
   };
 }
 
-function modelXml({ root, decal, selectedPart }) {
+function modelXml({ root, decal, selectedPart, includeMeshes = null }) {
   root.updateWorldMatrix(true, true);
   const records = [];
   root.traverse((object) => {
     if (!object.isMesh || object.visible === false) return;
+    if (includeMeshes && !includeMeshes.has(object)) return;
     const record = geometryRecord(object);
     if (record) records.push(record);
   });
@@ -249,17 +250,120 @@ function makeZip(entries) {
   return output;
 }
 
-export function createThreeMf({ root, decal = null, patternBytes = null, selectedPart = "" }) {
+export function createThreeMf({ root, decal = null, patternBytes = null, selectedPart = "", includeMeshes = null }) {
   if (!root) throw new Error("The model is still loading.");
   const hasTexture = !!(decal && patternBytes?.length);
   const files = [
     ["[Content_Types].xml", contentTypesXml(hasTexture)],
     ["_rels/.rels", rootRelationships],
-    ["3D/3dmodel.model", modelXml({ root, decal: hasTexture ? decal : null, selectedPart })],
+    ["3D/3dmodel.model", modelXml({ root, decal: hasTexture ? decal : null, selectedPart, includeMeshes })],
   ];
   if (hasTexture) {
     files.push(["3D/_rels/3dmodel.model.rels", textureRelationships]);
     files.push(["3D/Textures/pattern.png", patternBytes]);
   }
   return makeZip(files);
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function orderedPrintableMeshes(root, meshOrder) {
+  const requestedNames = new Set(meshOrder);
+  const foundByName = new Map();
+  root.traverse((object) => {
+    const meshName = object.userData?.meshName;
+    if (object.isMesh && object.visible !== false && requestedNames.has(meshName)) {
+      if (!foundByName.has(meshName)) foundByName.set(meshName, []);
+      foundByName.get(meshName).push(object);
+    }
+  });
+  const occurrenceByName = new Map();
+  return meshOrder.flatMap((meshName, absoluteIndex) => {
+    const occurrence = occurrenceByName.get(meshName) ?? 0;
+    occurrenceByName.set(meshName, occurrence + 1);
+    const mesh = foundByName.get(meshName)?.[occurrence];
+    return mesh ? [{ mesh, meshName, absoluteIndex }] : [];
+  });
+}
+
+export function createThreeMfBundle({
+  root,
+  decal = null,
+  patternBytes = null,
+  selectedPart = "",
+  meshOrder = [],
+}) {
+  if (!root) throw new Error("The model is still loading.");
+  if (!meshOrder.length) throw new Error("No printable-part order was supplied.");
+
+  const printable = orderedPrintableMeshes(root, meshOrder);
+  if (!printable.length) throw new Error("No printable parts were found.");
+
+  const printableSet = new Set(printable.map(({ mesh }) => mesh));
+  const complete = createThreeMf({
+    root,
+    decal,
+    patternBytes,
+    selectedPart,
+    includeMeshes: printableSet,
+  });
+  const files = [["duck-complete.3mf", complete]];
+  const manifest = [];
+  const width = Math.max(2, String(printable.length).length);
+
+  printable.forEach(({ mesh, meshName, absoluteIndex }) => {
+    const absoluteNumber = String(absoluteIndex + 1).padStart(width, "0");
+    const hex = colorHex(mesh.material).slice(0, 7);
+    const filament = exactBambuColor(hex) ?? closestBambuColor(hex);
+    const colorCode = filament.code;
+    const filename = `duck-${absoluteNumber}-${colorCode}.3mf`;
+    const path = `parts/${colorCode}/${filename}`;
+    const ownsDecal = decal?.userData?.targetMesh === mesh;
+    files.push([
+      path,
+      createThreeMf({
+        root,
+        decal: ownsDecal ? decal : null,
+        patternBytes: ownsDecal ? patternBytes : null,
+        selectedPart: mesh.userData.partLabel || meshName,
+        includeMeshes: new Set([mesh]),
+      }),
+    ]);
+    manifest.push({
+      absoluteNumber,
+      filename,
+      path,
+      part: mesh.userData.partLabel || meshName,
+      sourceMesh: meshName,
+      colorCode,
+      colorName: filament.name,
+      hex,
+      exactColor: filament.hex === hex,
+    });
+  });
+
+  const csv = [
+    ["absolute_number", "filename", "part", "source_mesh", "bambu_color_code", "bambu_color_name", "hex", "exact_bambu_color"],
+    ...manifest.map((entry) => [
+      entry.absoluteNumber,
+      entry.filename,
+      entry.part,
+      entry.sourceMesh,
+      entry.colorCode,
+      entry.colorName,
+      entry.hex,
+      entry.exactColor ? "yes" : "nearest",
+    ]),
+  ].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  files.splice(1, 0, ["parts.csv", csv]);
+
+  return {
+    bytes: makeZip(files),
+    manifest,
+    partCount: manifest.length,
+    colorCount: new Set(manifest.map((entry) => entry.colorCode)).size,
+  };
 }

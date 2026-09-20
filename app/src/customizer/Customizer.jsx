@@ -12,7 +12,7 @@ import { materialHookFor, VARIANTS } from "../game/variants.js";
 import { signed } from "../game/signed.js";
 import { ANTON, COMIC_INK, CREAM, HalftoneRamp } from "../ui/comic.jsx";
 import { MONO, ORANGE } from "../theme.js";
-import { createThreeMf } from "./three-mf.js";
+import { createThreeMfBundle } from "./three-mf.js";
 import { BAMBU_PLA_BASIC, bambuLabel, closestBambuColor, exactBambuColor } from "./bambu-colors.js";
 import { saveStudioDesign } from "./design-storage.js";
 
@@ -54,6 +54,12 @@ const PART_GROUPS = [
 const PARTS = PART_GROUPS.flatMap((group) => group.parts);
 const PART_BY_ID = Object.fromEntries(PARTS.map((part) => [part.id, part]));
 const PART_BY_MESH = new Map(PARTS.flatMap((part) => part.meshes.map((mesh) => [mesh, part])));
+// hip_l.stl is used by two physical covers. Repeating it reserves two stable
+// absolute export numbers instead of numbering whatever traversal finds first.
+const PHYSICAL_MESH_COPIES = { "hip_l.stl": 2 };
+const PRINT_MESH_ORDER = PARTS.flatMap((part) => part.meshes.flatMap((mesh) => (
+  Array.from({ length: PHYSICAL_MESH_COPIES[mesh] ?? 1 }, () => mesh)
+)));
 const DEFAULT_COLORS = Object.fromEntries(PARTS.map((part) => [part.id, part.color]));
 
 const QUICK_BAMBU_NAMES = new Set([
@@ -157,7 +163,7 @@ function OrbitCamera({ action }) {
   return null;
 }
 
-function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError }) {
+function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError, onSelect }) {
   const [rig, setRig] = useState(null);
   const [decal, setDecal] = useState(null);
 
@@ -266,6 +272,7 @@ function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError 
     });
     const nextDecal = new THREE.Mesh(geometry, material);
     nextDecal.name = "Custom pattern";
+    nextDecal.userData.targetMesh = target;
     nextDecal.renderOrder = 4;
     setDecal(nextDecal);
     exportRef.current.decal = nextDecal;
@@ -278,9 +285,16 @@ function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError 
   }, [exportRef, pattern, rig, selectedId]);
 
   if (!rig) return null;
+  const selectClickedPart = (event) => {
+    if (event.delta > 5) return;
+    const part = PART_BY_MESH.get(event.object?.userData?.meshName);
+    if (!part) return;
+    event.stopPropagation();
+    onSelect(part.id);
+  };
   return (
     <>
-      <primitive object={rig.placer} />
+      <primitive object={rig.placer} onClick={selectClickedPart} />
       {decal ? <primitive object={decal} /> : null}
     </>
   );
@@ -380,7 +394,7 @@ function PartRail({ selectedId, colors, onSelect }) {
   );
 }
 
-function CanvasPanel({ colors, selectedId, pattern, exportRef, action, loading, error, onReady, onError, onView }) {
+function CanvasPanel({ colors, selectedId, pattern, exportRef, action, loading, error, onReady, onError, onView, onSelect }) {
   return (
     <Box component="main" sx={{ gridArea: "preview", position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden", background: "#0b0b10" }}>
       <HalftoneRamp color="rgba(255, 122, 47, 0.09)" size={22} corner="bottom-left" reach={72} />
@@ -396,7 +410,7 @@ function CanvasPanel({ colors, selectedId, pattern, exportRef, action, loading, 
         <hemisphereLight color="#fff8eb" groundColor="#1c1823" intensity={1.25} />
         <directionalLight color="#fff0d6" position={[1.5, 2.2, 1.8]} intensity={2.6} />
         <directionalLight color={ORANGE} position={[-1.2, 0.8, -1.2]} intensity={1.15} />
-        <StudioModel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} onReady={onReady} onError={onError} />
+        <StudioModel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} onReady={onReady} onError={onError} onSelect={onSelect} />
         <mesh rotation-x={-Math.PI / 2} position={[0, -0.002, 0]} receiveShadow>
           <circleGeometry args={[0.38, 96]} />
           <meshStandardMaterial color="#101018" roughness={0.94} transparent opacity={0.66} />
@@ -629,20 +643,21 @@ export default function Customizer() {
     setNotice("Packaging full-resolution geometry…");
     await new Promise((resolve) => requestAnimationFrame(resolve));
     try {
-      const bytes = createThreeMf({
+      const bundle = createThreeMfBundle({
         root: exportRef.current.root,
         decal: exportRef.current.decal,
         patternBytes: pattern?.bytes,
         selectedPart: PART_BY_ID[selectedId].label,
+        meshOrder: PRINT_MESH_ORDER,
       });
-      const blob = new Blob([bytes], { type: "model/3mf" });
+      const blob = new Blob([bundle.bytes], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `microduck-${new Date().toISOString().slice(0, 10)}.3mf`;
+      anchor.download = `microduck-${new Date().toISOString().slice(0, 10)}.zip`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setNotice(`3MF ready · ${(blob.size / 1024 / 1024).toFixed(1)} MB`);
+      setNotice(`${bundle.partCount} parts · ${bundle.colorCount} colors · ${(blob.size / 1024 / 1024).toFixed(1)} MB`);
     } catch (error) {
       setNotice(error?.message || "Export failed");
     } finally {
@@ -664,16 +679,16 @@ export default function Customizer() {
           <Icon type="play" />
           <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>Run design</Box>
         </Box>
-        <Box component="button" type="button" aria-label={exporting ? "Building 3MF file" : "Export 3MF file"} disabled={!ready || exporting} onClick={exportDesign} sx={{ ...smallButtonSx, minHeight: 42, display: "flex", alignItems: "center", gap: "0.5rem", background: ORANGE, boxShadow: `4px 4px 0 ${CREAM}`, opacity: !ready ? 0.55 : 1, "&:disabled": { cursor: "wait" } }}>
+        <Box component="button" type="button" aria-label={exporting ? "Building 3MF ZIP package" : "Export 3MF ZIP package"} disabled={!ready || exporting} onClick={exportDesign} sx={{ ...smallButtonSx, minHeight: 42, display: "flex", alignItems: "center", gap: "0.5rem", background: ORANGE, boxShadow: `4px 4px 0 ${CREAM}`, opacity: !ready ? 0.55 : 1, "&:disabled": { cursor: "wait" } }}>
           {exporting ? <CircularProgress size={16} sx={{ color: COMIC_INK }} /> : null}
-          <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{exporting ? "Building" : "Export 3MF"}</Box>
+          <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{exporting ? "Building" : "Export ZIP"}</Box>
           <Icon type="arrow" />
         </Box>
       </Box>
 
       <Box sx={{ height: { xs: "auto", md: "calc(100dvh - 66px)" }, display: "grid", gridTemplateAreas: { xs: '"preview" "parts" "controls"', md: '"parts preview controls"' }, gridTemplateColumns: { xs: "1fr", md: "230px minmax(360px,1fr) 300px", xl: "258px minmax(520px,1fr) 348px" }, gridTemplateRows: { xs: "minmax(520px, 68vh) auto auto", md: "1fr" } }}>
         <PartRail selectedId={selectedId} colors={colors} onSelect={setSelectedId} />
-        <CanvasPanel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} action={viewAction} loading={loading} error={loadError} onReady={handleModelReady} onError={handleModelError} onView={(type) => setViewAction(({ seq }) => ({ seq: seq + 1, type }))} />
+        <CanvasPanel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} action={viewAction} loading={loading} error={loadError} onReady={handleModelReady} onError={handleModelError} onView={(type) => setViewAction(({ seq }) => ({ seq: seq + 1, type }))} onSelect={setSelectedId} />
         <ControlRail selectedId={selectedId} colors={colors} tab={tab} setTab={setTab} pattern={pattern} onColor={setSelectedColor} onPreset={(next) => setColors({ ...next })} onRandom={randomize} onPattern={selectPattern} />
       </Box>
 
