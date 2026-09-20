@@ -62,8 +62,14 @@ const PRESETS = [
 ];
 
 const standPose = Object.fromEntries(JOINT_NAMES.map((name, index) => [name, DEFAULT_POSE[index]]));
-const selectionOutlineMaterial = new THREE.MeshBasicMaterial({
-  color: ORANGE,
+const selectionOutlineOuterMaterial = new THREE.MeshBasicMaterial({
+  color: CREAM,
+  side: THREE.BackSide,
+  depthWrite: false,
+  toneMapped: false,
+});
+const selectionOutlineInnerMaterial = new THREE.MeshBasicMaterial({
+  color: COMIC_INK,
   side: THREE.BackSide,
   depthWrite: false,
   toneMapped: false,
@@ -72,15 +78,21 @@ const selectionOutlines = new WeakMap();
 
 function selectionOutlineFor(mesh) {
   if (selectionOutlines.has(mesh)) return selectionOutlines.get(mesh);
-  const outline = new THREE.Mesh(mesh.geometry, selectionOutlineMaterial);
-  outline.name = "studio-selection-outline";
-  outline.scale.setScalar(1.022);
-  outline.renderOrder = 2;
-  outline.visible = false;
-  outline.raycast = () => {};
-  mesh.add(outline);
-  selectionOutlines.set(mesh, outline);
-  return outline;
+  const indicator = new THREE.Group();
+  indicator.name = "studio-selection-indicator";
+  indicator.visible = false;
+  const outer = new THREE.Mesh(mesh.geometry, selectionOutlineOuterMaterial);
+  outer.scale.setScalar(1.055);
+  outer.renderOrder = 2;
+  outer.raycast = () => {};
+  const inner = new THREE.Mesh(mesh.geometry, selectionOutlineInnerMaterial);
+  inner.scale.setScalar(1.026);
+  inner.renderOrder = 3;
+  inner.raycast = () => {};
+  indicator.add(outer, inner);
+  mesh.add(indicator);
+  selectionOutlines.set(mesh, indicator);
+  return indicator;
 }
 
 function Icon({ type }) {
@@ -168,7 +180,11 @@ function StudioModel({ colors, selectedId, exportRef, onReady, onError, onSelect
     rig.placer.traverse((object) => {
       if (object.isLineSegments) object.raycast = () => {};
       if (!object.isMesh || !object.userData.meshName) return;
-      const part = partForMeshInstance(object.userData.meshName, object.userData.bodyName);
+      const part = partForMeshInstance(
+        object.userData.meshName,
+        object.userData.bodyName,
+        object.userData.meshOccurrence,
+      );
       if (!part) return;
       object.userData.studioPartId = part.id;
       if (!object.userData.studioMaterial) {
@@ -477,7 +493,7 @@ function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor
         </Box>
       </Box>
 
-      <Box role="tablist" aria-label="Part categories" sx={{ mx: "0.7rem", p: "3px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", background: "#09090d", border: "1px solid rgba(255,255,255,0.1)" }}>
+      <Box role="tablist" aria-label="Part categories" sx={{ mx: "0.7rem", p: "3px", display: "grid", gridTemplateColumns: `repeat(${MOBILE_GROUPS.length},1fr)`, background: "#09090d", border: "1px solid rgba(255,255,255,0.1)" }}>
         {MOBILE_GROUPS.map(({ id, label }) => (
           <Box component="button" type="button" role="tab" aria-selected={mode === id} key={id} onClick={() => chooseGroup(id)} sx={{ appearance: "none", minWidth: 0, border: 0, background: mode === id ? CREAM : "transparent", color: mode === id ? COMIC_INK : "rgba(255,255,255,0.54)", fontFamily: ANTON, fontSize: "0.68rem", letterSpacing: "0.035em", textTransform: "uppercase", "&:active": { transform: "scale(0.97)" } }}>
             {label}

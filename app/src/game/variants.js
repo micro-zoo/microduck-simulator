@@ -260,7 +260,7 @@ export function materialMapForHexOverrides(overrides, base = VARIANTS.classic) {
 }
 
 export const materialHookForMap = (map, fallback = VARIANTS.classic.mechGray) =>
-  (mesh, body) => materialForMeshInstance(map, mesh, body, fallback);
+  (mesh, body, _rgba, occurrence) => materialForMeshInstance(map, mesh, body, occurrence, fallback);
 
 // ── Live re-skin ────────────────────────────────────────────────────────
 // Swap materials on an already-built rig without reloading any STL.
@@ -335,7 +335,13 @@ export function applyMaterialMap(rig, map, fallback = VARIANTS.classic.mechGray)
   const fade = !!rig.placer?.parent;
   rig.root.traverse((o) => {
     if (!o.isMesh || !o.userData.meshName) return;
-    const spec = materialForMeshInstance(map, o.userData.meshName, o.userData.bodyName, fallback);
+    const spec = materialForMeshInstance(
+      map,
+      o.userData.meshName,
+      o.userData.bodyName,
+      o.userData.meshOccurrence,
+      fallback,
+    );
     const target = matFor(spec);
     if (!fade) {
       fades.delete(o);

@@ -236,6 +236,7 @@ export async function buildRig(k, opts = {}) {
   // collision copies of power_support, soles, legs); drawing both would
   // only z-fight, so exact duplicates are skipped.
   const seenGeoms = new Set();
+  const meshOccurrences = new Map();
   for (const b of k.bodies) {
     const g = bodies.get(b.name);
     if (!g) continue;
@@ -246,17 +247,21 @@ export async function buildRig(k, opts = {}) {
       const dupKey = `${b.name}|${geom.mesh}|${geom.pos}|${geom.quat}`;
       if (seenGeoms.has(dupKey)) continue;
       seenGeoms.add(dupKey);
+      const occurrenceKey = `${b.name}|${geom.mesh}`;
+      const meshOccurrence = (meshOccurrences.get(occurrenceKey) ?? 0) + 1;
+      meshOccurrences.set(occurrenceKey, meshOccurrence);
       pending.push(
         loadMesh(geom.mesh).then(({ display, welded }) => {
           const rgba = geom.color
             ? [geom.color[0], geom.color[1], geom.color[2], geom.color[3] ?? 1]
             : [0.85, 0.85, 0.85, 1];
-          const spec = toSpec(materialForMesh?.(geom.mesh, b.name, rgba), rgba);
+          const spec = toSpec(materialForMesh?.(geom.mesh, b.name, rgba, meshOccurrence), rgba);
           const m = new THREE.Mesh(display, matFor(spec));
           // Mesh filename tag so callers can re-skin materials in place
           // (survives cloneRig: Object3D.copy deep-copies userData).
           m.userData.meshName = geom.mesh;
           m.userData.bodyName = b.name;
+          m.userData.meshOccurrence = meshOccurrence;
           if (geom.pos) m.position.set(...geom.pos);
           if (geom.quat) m.quaternion.set(geom.quat[1], geom.quat[2], geom.quat[3], geom.quat[0]);
           g.add(m);

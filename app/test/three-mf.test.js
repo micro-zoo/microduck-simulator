@@ -98,3 +98,29 @@ test("ZIP bundle includes a complete model and absolutely numbered parts grouped
   assert.deepEqual(bundle.manifest.map((part) => part.part), ["Head shell", "Right hip cover", "Left hip cover"]);
   assert.match(binary, /absolute_number,filename,part,source_mesh,bambu_color_code/);
 });
+
+test("ZIP bundle keeps separately positioned copies of one mesh independently numbered", () => {
+  const root = new THREE.Group();
+  const addCopy = (occurrence, label, color) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 0.01, 0.01),
+      new THREE.MeshStandardMaterial({ color }),
+    );
+    mesh.userData.meshName = "neck.stl";
+    mesh.userData.bodyName = "neck";
+    mesh.userData.meshOccurrence = occurrence;
+    mesh.userData.partLabel = label;
+    root.add(mesh);
+  };
+  addCopy(1, "Front neck link", "#000000");
+  addCopy(2, "Rear neck link", "#ffffff");
+
+  const bundle = createThreeMfBundle({
+    root,
+    meshOrder: ["neck::neck.stl::1", "neck::neck.stl::2"],
+  });
+
+  assert.equal(bundle.partCount, 2);
+  assert.deepEqual(bundle.manifest.map((part) => part.part), ["Front neck link", "Rear neck link"]);
+  assert.deepEqual(bundle.manifest.map((part) => part.absoluteNumber), ["01", "02"]);
+});

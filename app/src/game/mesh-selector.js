@@ -1,14 +1,19 @@
 export const MESH_INSTANCE_SEPARATOR = "::";
 
-export function meshInstanceKey(meshName, bodyName = "") {
-  return bodyName ? `${bodyName}${MESH_INSTANCE_SEPARATOR}${meshName}` : meshName;
+export function meshInstanceKey(meshName, bodyName = "", occurrence = null) {
+  if (!bodyName) return meshName;
+  const base = `${bodyName}${MESH_INSTANCE_SEPARATOR}${meshName}`;
+  return occurrence == null ? base : `${base}${MESH_INSTANCE_SEPARATOR}${occurrence}`;
 }
 
 export function meshNameFromSelector(selector) {
-  const separator = selector.indexOf(MESH_INSTANCE_SEPARATOR);
-  return separator === -1 ? selector : selector.slice(separator + MESH_INSTANCE_SEPARATOR.length);
+  const parts = selector.split(MESH_INSTANCE_SEPARATOR);
+  return parts.length === 1 ? selector : parts[1];
 }
 
-export function materialForMeshInstance(map, meshName, bodyName, fallback) {
-  return map?.[meshInstanceKey(meshName, bodyName)] ?? map?.[meshName] ?? fallback;
+export function materialForMeshInstance(map, meshName, bodyName, occurrence, fallback) {
+  return map?.[meshInstanceKey(meshName, bodyName, occurrence)]
+    ?? map?.[meshInstanceKey(meshName, bodyName)]
+    ?? map?.[meshName]
+    ?? fallback;
 }

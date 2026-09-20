@@ -278,7 +278,12 @@ function orderedPrintableMeshes(root, meshOrder) {
     const meshName = object.userData?.meshName;
     if (object.isMesh && object.visible !== false && requestedNames.has(meshName)) {
       const exactSelector = meshInstanceKey(meshName, object.userData?.bodyName);
-      for (const selector of new Set([exactSelector, meshName])) {
+      const occurrenceSelector = meshInstanceKey(
+        meshName,
+        object.userData?.bodyName,
+        object.userData?.meshOccurrence,
+      );
+      for (const selector of new Set([occurrenceSelector, exactSelector, meshName])) {
         if (!foundBySelector.has(selector)) foundBySelector.set(selector, []);
         foundBySelector.get(selector).push(object);
       }

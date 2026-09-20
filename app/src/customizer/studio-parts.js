@@ -1,9 +1,17 @@
 import { meshInstanceKey } from "../game/mesh-selector.js";
 
-const target = (body, mesh) => ({ body, mesh });
+const target = (body, mesh, occurrence = 1) => ({ body, mesh, occurrence });
 
-// Every user-printable exterior or soft part in the MJLab walking model.
-// Body names matter for mirrored pieces that reuse the same STL file.
+// Print source of truth:
+// 1. Parts must be present in Pollen Robotics' current Microduck MJCF assembly.
+// 2. Their mesh must also be classified as a print in the reconstructed fabrication
+//    manifest (microduck-replica commit 6e41e2f, print/README.md).
+// Legacy aliases are normalized to the current mesh names and obsolete, unreferenced
+// trunk_shell_left/right files are omitted. Exact visual/collision duplicates count
+// once; mirrored or separately positioned instances count as distinct physical parts.
+// Purchased hardware stays out of the print package.
+// Assembly: https://github.com/pollen-robotics/microduck_rl
+// Fabrication manifest: https://github.com/fanhao375/microduck-replica/tree/master/print
 export const PART_GROUPS = [
   {
     label: "Head",
@@ -15,16 +23,33 @@ export const PART_GROUPS = [
       { id: "jaw", label: "Lower jaw", targets: [target("jaw_soft", "jaw.stl")], color: "#FF7A2F" },
       { id: "upperBeakSoft", label: "Upper beak soft pad", targets: [target("jaw_soft", "soft_mouth_top.stl")], color: "#FFB52E" },
       { id: "lowerJawSoft", label: "Lower jaw soft pad", targets: [target("jaw_soft", "jaw_soft.stl")], color: "#FFB52E" },
+      { id: "headMotorSupport", label: "Head motor support", targets: [target("jaw_soft", "motor_support.stl")], color: "#8B8B90" },
+      { id: "cameraLensHolder", label: "Camera lens holder", targets: [target("jaw_soft", "m12_lens_holder.stl")], color: "#1D1D1F" },
     ],
   },
   {
     label: "Body",
     parts: [
-      { id: "bodyCore", label: "Trunk base", targets: [target("trunk_base", "trunk_base.stl")], color: "#F2EFE8" },
       { id: "bodyLeft", label: "Left body shell", targets: [target("trunk_base", "left_shell.stl")], color: "#F2EFE8" },
       { id: "bodyRight", label: "Right body shell", targets: [target("trunk_base", "right_shell.stl")], color: "#F2EFE8" },
+      { id: "bodyCore", label: "Trunk base", targets: [target("trunk_base", "trunk_base.stl")], color: "#F2EFE8" },
+      { id: "powerSupport", label: "Power support", targets: [target("trunk_base", "power_support.stl")], color: "#8B8B90" },
+      { id: "pcbLocker", label: "PCB locking clip", targets: [target("trunk_base", "banana_pcb_locker.stl")], color: "#1D1D1F" },
       { id: "leftHip", label: "Left hip cover", targets: [target("hip_l", "hip_l.stl")], color: "#8B8B90" },
       { id: "rightHip", label: "Right hip cover", targets: [target("hip_l_2", "hip_l.stl")], color: "#8B8B90" },
+    ],
+  },
+  {
+    label: "Joints",
+    parts: [
+      { id: "neckFront", label: "Front neck link", targets: [target("neck", "neck.stl", 1)], color: "#8B8B90" },
+      { id: "neckRear", label: "Rear neck link", targets: [target("neck", "neck.stl", 2)], color: "#8B8B90" },
+      { id: "neckPitch", label: "Neck pitch link", targets: [target("neck_pitch", "neck_pitch.stl")], color: "#8B8B90" },
+      { id: "headJoint", label: "Head joint link", targets: [target("yaw_roll_motion", "yaw_roll_motion.stl")], color: "#8B8B90" },
+      { id: "leftYawRoll", label: "Left yaw-roll link", targets: [target("yaw2roll", "yaw2roll.stl")], color: "#1D1D1F" },
+      { id: "rightYawRoll", label: "Right yaw-roll link", targets: [target("bearing_roll", "yaw2roll.stl")], color: "#1D1D1F" },
+      { id: "leftBearingRetainer", label: "Left bearing retainer", targets: [target("yaw2roll", "bearing_roll.stl")], color: "#1D1D1F" },
+      { id: "rightBearingRetainer", label: "Right bearing retainer", targets: [target("bearing_roll", "bearing_roll.stl")], color: "#1D1D1F" },
     ],
   },
   {
@@ -54,19 +79,22 @@ export const PART_GROUPS = [
 export const PARTS = PART_GROUPS.flatMap((group) => group.parts);
 export const PART_BY_ID = Object.fromEntries(PARTS.map((part) => [part.id, part]));
 export const PART_BY_TARGET = new Map(PARTS.flatMap((part) => (
-  part.targets.map(({ mesh, body }) => [meshInstanceKey(mesh, body), part])
+  part.targets.map(({ mesh, body, occurrence }) => [meshInstanceKey(mesh, body, occurrence), part])
 )));
 export const PRINT_MESH_ORDER = PARTS.flatMap((part) => (
-  part.targets.map(({ mesh, body }) => meshInstanceKey(mesh, body))
+  part.targets.map(({ mesh, body, occurrence }) => meshInstanceKey(mesh, body, occurrence))
 ));
 export const DEFAULT_COLORS = Object.fromEntries(PARTS.map((part) => [part.id, part.color]));
 
-export function partForMeshInstance(meshName, bodyName) {
-  return PART_BY_TARGET.get(meshInstanceKey(meshName, bodyName)) ?? null;
+export function partForMeshInstance(meshName, bodyName, occurrence) {
+  return PART_BY_TARGET.get(meshInstanceKey(meshName, bodyName, occurrence)) ?? null;
 }
 
 export function colorOverridesForParts(colors) {
   return Object.fromEntries(PARTS.flatMap((part) => (
-    part.targets.map(({ mesh, body }) => [meshInstanceKey(mesh, body), colors[part.id]])
+    part.targets.map(({ mesh, body, occurrence }) => [
+      meshInstanceKey(mesh, body, occurrence),
+      colors[part.id],
+    ])
   )));
 }
