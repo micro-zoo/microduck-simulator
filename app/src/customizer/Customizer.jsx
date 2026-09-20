@@ -115,15 +115,29 @@ function OrbitCamera({ action }) {
   useEffect(() => {
     camera.position.set(0.5, 0.31, 0.52);
     const controls = new OrbitControls(camera, gl.domElement);
+    const mobilePointer = window.matchMedia("(max-width: 899px) and (pointer: coarse)");
+    const previousTouchAction = gl.domElement.style.touchAction;
+    const configureTouch = () => {
+      controls.enabled = !mobilePointer.matches;
+      gl.domElement.style.touchAction = mobilePointer.matches ? "pan-y" : "none";
+    };
     controls.target.set(0, 0.13, 0);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.minDistance = 0.3;
     controls.maxDistance = 1.25;
     controls.enablePan = false;
+    configureTouch();
+    if (mobilePointer.addEventListener) mobilePointer.addEventListener("change", configureTouch);
+    else mobilePointer.addListener?.(configureTouch);
     controls.update();
     controlsRef.current = controls;
-    return () => controls.dispose();
+    return () => {
+      if (mobilePointer.removeEventListener) mobilePointer.removeEventListener("change", configureTouch);
+      else mobilePointer.removeListener?.(configureTouch);
+      gl.domElement.style.touchAction = previousTouchAction;
+      controls.dispose();
+    };
   }, [camera, gl]);
 
   useEffect(() => {
@@ -565,6 +579,20 @@ export default function Customizer() {
     return () => { document.title = previousTitle; };
   }, []);
 
+  useEffect(() => {
+    const htmlOverflow = document.documentElement.style.overflow;
+    const bodyOverflow = document.body.style.overflow;
+    const bodyOverscroll = document.body.style.overscrollBehaviorY;
+    document.documentElement.style.overflow = "auto";
+    document.body.style.overflow = "auto";
+    document.body.style.overscrollBehaviorY = "contain";
+    return () => {
+      document.documentElement.style.overflow = htmlOverflow;
+      document.body.style.overflow = bodyOverflow;
+      document.body.style.overscrollBehaviorY = bodyOverscroll;
+    };
+  }, []);
+
   useEffect(() => () => {
     if (pattern?.url) URL.revokeObjectURL(pattern.url);
   }, [pattern]);
@@ -623,7 +651,7 @@ export default function Customizer() {
   };
 
   return (
-    <Box sx={{ minHeight: "100dvh", height: { xs: "auto", md: "100dvh" }, overflow: { xs: "visible", md: "hidden" }, background: "#08080c", color: CREAM }}>
+    <Box sx={{ minHeight: "100dvh", height: { xs: "auto", md: "100dvh" }, overflow: { xs: "visible", md: "hidden" }, WebkitOverflowScrolling: "touch", background: "#08080c", color: CREAM }}>
       <Box component="header" sx={{ position: "relative", zIndex: 10, height: 66, display: "flex", alignItems: "center", gap: { xs: 1, sm: 2 }, px: { xs: 1.2, sm: 2.2 }, borderBottom: "1px solid rgba(255,255,255,0.1)", background: "#0b0b10" }}>
         <Box component="a" href="./" aria-label="Back to Microduck simulator" sx={{ display: "flex", alignItems: "center", gap: 1, color: CREAM, textDecoration: "none" }}>
           <Box component="img" src={signed("./assets/duck-head-mark.webp")} alt="" sx={{ width: 38, height: 30, objectFit: "contain", filter: "drop-shadow(2px 2px 0 rgba(0,0,0,.5))" }} />
