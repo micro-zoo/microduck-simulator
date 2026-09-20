@@ -6,7 +6,7 @@ import App from "./App.jsx";
 
 // Build tag: bump to change the bundle's content hash, e.g. to bust a stale
 // edge-cached asset URL on the HF Space.
-const BUILD_TAG = "2026-08-25";
+const BUILD_TAG = "2026-09-20";
 console.info(`Microduck build ${BUILD_TAG}`);
 
 // No StrictMode: the game core is a heavyweight singleton (MuJoCo WASM,

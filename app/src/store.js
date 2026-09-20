@@ -47,6 +47,8 @@ export const useGame = create(
     danceMove: "",
     dancePanelOpen: false,
     variant: "classic",
+    customDesignAvailable: false,
+    customDesignSwatch: "#ff7a2f",
     padConnected: false,
     touchMode: false,
     // Deployed padd parity: Drive, Head, or Body Pose. Touch only; the

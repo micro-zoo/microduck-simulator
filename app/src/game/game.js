@@ -49,8 +49,10 @@ import {
   loadGlbGeometries, geometryToBinaryStl,
 } from "./duck.js";
 import {
-  VARIANTS, materialHookFor, DEFAULT_VARIANT, applyVariant,
+  VARIANTS, materialHookFor, materialHookForMap, materialMapForHexOverrides,
+  DEFAULT_VARIANT, applyVariant, applyMaterialMap,
 } from "./variants.js";
+import { readStudioDesign } from "../customizer/design-storage.js";
 import { Controller } from "./controls/controller.js";
 import { KeyboardSource } from "./controls/keyboard.js";
 import { GamepadSource } from "./controls/gamepad.js";
@@ -109,6 +111,11 @@ export async function bootGame({ scene, camera, renderer }) {
 async function boot({ scene, camera, renderer }) {
   const setStore = useGame.setState;
   const store = useGame.getState;
+  const savedStudioDesign = readStudioDesign();
+  const customDesignRequested = new URLSearchParams(location.search).get("design") === "custom";
+  const customMaterialMap = savedStudioDesign
+    ? materialMapForHexOverrides(savedStudioDesign.meshColors)
+    : null;
 
   bootNote("Microduck BIOS v1.0");
   bootLine("MEMORY CHECK")("640K OK");
@@ -326,12 +333,24 @@ async function boot({ scene, camera, renderer }) {
   doneMeshes(`${meshFiles.length} FILES`);
 
   const sessions = {};
-  // Always boot on the classic (orange) colourway; the quickbar re-skins live.
-  let currentVariant = DEFAULT_VARIANT;
+  // A Color Studio launch keeps the saved per-mesh palette through the full
+  // physics simulator. Standard launches retain the classic orange robot.
+  let currentVariant = customDesignRequested && customMaterialMap ? "custom" : DEFAULT_VARIANT;
+  const currentMaterialHook = () => currentVariant === "custom"
+    ? materialHookForMap(customMaterialMap)
+    : materialHookFor(VARIANTS[currentVariant]);
+  const applyCurrentMaterials = (targetRig) => currentVariant === "custom"
+    ? applyMaterialMap(targetRig, customMaterialMap)
+    : applyVariant(targetRig, currentVariant);
+  setStore({
+    variant: currentVariant,
+    customDesignAvailable: !!customMaterialMap,
+    customDesignSwatch: savedStudioDesign?.colors?.head ?? "#ff7a2f",
+  });
   const rigPromise = (async () => {
     const doneRig = bootLine("RENDER RIG");
     try {
-      const builtRig = await buildRig(k, { materialForMesh: materialHookFor(VARIANTS[currentVariant]) });
+      const builtRig = await buildRig(k, { materialForMesh: currentMaterialHook() });
       doneRig("OK");
       return builtRig;
     } catch (err) {
@@ -1179,7 +1198,7 @@ async function boot({ scene, camera, renderer }) {
         loadKinematics(`${MODEL_DIR}/kinematics_rollers.json`),
       ]);
       const [rRig, sDrive] = await Promise.all([
-        buildRig(rk, { materialForMesh: materialHookFor(VARIANTS[currentVariant]) }),
+        buildRig(rk, { materialForMesh: currentMaterialHook() }),
         ort.InferenceSession.create(signed(POLICIES.drive), sessionOpts),
         addMeshesToVfs(rMeshFiles),
       ]);
@@ -1205,7 +1224,7 @@ async function boot({ scene, camera, renderer }) {
        standKeyId, ballQposAdr, ballDofAdr, extraJoints } = L);
     bamActuator = L.bamActuator;
     // The rig may have been built (or last shown) under another colourway.
-    applyVariant(rig, currentVariant);
+    applyCurrentMaterials(rig);
     scene.add(rig.placer);
     setStore({ loco: name });
     resetSim();
@@ -2430,9 +2449,9 @@ async function boot({ scene, camera, renderer }) {
   Object.assign(gameApi, {
     frame,
     setVariant: (name) => {
-      if (!VARIANTS[name] || name === currentVariant) return;
+      if ((name === "custom" && !customMaterialMap) || (!VARIANTS[name] && name !== "custom") || name === currentVariant) return;
       currentVariant = name;
-      applyVariant(rig, name);
+      applyCurrentMaterials(rig);
       setStore({ variant: name });
     },
     requestLoco: (name) => {

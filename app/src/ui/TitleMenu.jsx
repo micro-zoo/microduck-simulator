@@ -414,6 +414,8 @@ export default function TitleMenu() {
         <Box
           sx={{
             display: "flex",
+            flexWrap: "wrap",
+            gap: "1rem",
             justifyContent: "center",
             mt: "1.7rem",
             "@media (max-height: 700px)": { mt: "1.2rem" },
@@ -428,6 +430,15 @@ export default function TitleMenu() {
             onClick={closeMenu}
           >
             {ctaLabel}
+          </ComicButton>
+          <ComicButton
+            href="?studio=1"
+            scheme="paper"
+            variant="outline"
+            size="medium"
+            onDark
+          >
+            Color Studio
           </ComicButton>
         </Box>
       </Box>

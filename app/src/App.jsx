@@ -14,8 +14,9 @@ import TitleMenu from "./ui/TitleMenu.jsx";
 import Preboot from "./ui/Preboot.jsx";
 import { useGame } from "./store.js";
 import { signed } from "./game/signed.js";
+import Customizer from "./customizer/Customizer.jsx";
 
-export default function App() {
+function SimulatorApp() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
 
@@ -88,4 +89,9 @@ export default function App() {
       <Preboot />
     </>
   );
+}
+
+export default function App() {
+  const studio = new URLSearchParams(location.search).get("studio") === "1";
+  return studio ? <Customizer /> : <SimulatorApp />;
 }

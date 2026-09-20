@@ -247,6 +247,19 @@ export const materialHookFor = (v) => {
   return (mesh) => map[mesh] ?? v.mechGray;
 };
 
+export function materialMapForHexOverrides(overrides, base = VARIANTS.classic) {
+  const map = meshMaterialsFor(base);
+  for (const [mesh, hex] of Object.entries(overrides ?? {})) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) continue;
+    const fallback = map[mesh] ?? base.mechGray;
+    map[mesh] = { ...fallback, color: new THREE.Color(hex).toArray() };
+  }
+  return map;
+}
+
+export const materialHookForMap = (map, fallback = VARIANTS.classic.mechGray) =>
+  (mesh) => map[mesh] ?? fallback;
+
 // ── Live re-skin ────────────────────────────────────────────────────────
 // Swap materials on an already-built rig without reloading any STL.
 // Meshes are identified via userData.meshName (set by duck.js buildRig and
@@ -316,13 +329,11 @@ function driveFades() {
   fadeRaf = fades.size ? requestAnimationFrame(driveFades) : 0;
 }
 
-export function applyVariant(rig, variant) {
-  const v = typeof variant === "string" ? VARIANTS[variant] : variant;
-  const map = meshMaterialsFor(v);
+export function applyMaterialMap(rig, map, fallback = VARIANTS.classic.mechGray) {
   const fade = !!rig.placer?.parent;
   rig.root.traverse((o) => {
     if (!o.isMesh || !o.userData.meshName) return;
-    const spec = map[o.userData.meshName] ?? v.mechGray;
+    const spec = map[o.userData.meshName] ?? fallback;
     const target = matFor(spec);
     if (!fade) {
       fades.delete(o);
@@ -350,6 +361,11 @@ export function applyVariant(rig, variant) {
     o.material = m;
   });
   if (fades.size && !fadeRaf) fadeRaf = requestAnimationFrame(driveFades);
+}
+
+export function applyVariant(rig, variant) {
+  const v = typeof variant === "string" ? VARIANTS[variant] : variant;
+  applyMaterialMap(rig, meshMaterialsFor(v), v.mechGray);
 }
 
 // Linear-space spec colour -> sRGB CSS hex, for swatch UI elements.

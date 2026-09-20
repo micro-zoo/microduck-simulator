@@ -163,6 +163,25 @@ function BackArrowIcon() {
   );
 }
 
+function PaletteIcon() {
+  return (
+    <Box
+      component="svg"
+      viewBox="0 0 24 24"
+      aria-hidden
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.1}
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+      sx={{ width: "0.95em", height: "0.95em", display: "block", flex: "none" }}
+    >
+      <path d="M12 3a9 9 0 1 0 0 18h1.2a2 2 0 0 0 0-4H12a1.7 1.7 0 0 1 0-3.4h3.8A5.2 5.2 0 0 0 21 8.4C21 5.4 17 3 12 3Z" />
+      <path d="M7.5 8h.01M11 6h.01M16 7.5h.01M6.5 12h.01" />
+    </Box>
+  );
+}
+
 const hudHitSx = {
   appearance: "none",
   display: "inline-flex",
@@ -193,28 +212,43 @@ const hudHitSx = {
   },
 };
 
-function BackButton() {
+function NavigationButtons() {
   return (
-    <HudPlate
-      caption="Nav"
-      sx={{ position: "fixed", top: "1.25rem", left: "1.5rem", zIndex: 10 }}
-    >
-      <Box
-        component="button"
-        type="button"
-        onClick={() => useGame.setState({ menuOpen: true })}
-        sx={{
-          ...hudHitSx,
-          "&:hover": {
-            color: ORANGE,
-            background: "rgba(255, 122, 47, 0.12)",
-          },
-          "&:active": { filter: "brightness(0.92)" },
-        }}
-      >
-        <BackArrowIcon /> Back
-      </Box>
-    </HudPlate>
+    <Box sx={{ position: "fixed", top: "1.25rem", left: "1.5rem", zIndex: 10, display: "flex", gap: "0.75rem" }}>
+      <HudPlate caption="Nav">
+        <Box
+          component="button"
+          type="button"
+          onClick={() => useGame.setState({ menuOpen: true })}
+          sx={{
+            ...hudHitSx,
+            "&:hover": {
+              color: ORANGE,
+              background: "rgba(255, 122, 47, 0.12)",
+            },
+            "&:active": { filter: "brightness(0.92)" },
+          }}
+        >
+          <BackArrowIcon /> Back
+        </Box>
+      </HudPlate>
+      <HudPlate caption="Design" captionFill="orange">
+        <Box
+          component="a"
+          href="?studio=1"
+          aria-label="Open Color Studio"
+          sx={{
+            ...hudHitSx,
+            background: ORANGE,
+            color: COMIC_INK,
+            "&:hover": { background: CREAM, color: COMIC_INK },
+            "&:active": { filter: "brightness(0.92)" },
+          }}
+        >
+          <PaletteIcon /> Studio
+        </Box>
+      </HudPlate>
+    </Box>
   );
 }
 
@@ -269,6 +303,8 @@ function CommunityLinks() {
 
 function Quickbar() {
   const variant = useGame((s) => s.variant);
+  const customDesignAvailable = useGame((s) => s.customDesignAvailable);
+  const customDesignSwatch = useGame((s) => s.customDesignSwatch);
   const locoWant = useGame((s) => s.locoWant);
   const sceneWant = useGame((s) => s.sceneWant);
   const sceneSwitching = useGame((s) => s.sceneSwitching);
@@ -311,9 +347,12 @@ function Quickbar() {
             gap: `${CELL_GAP}px`,
           }}
         >
-          {Object.entries(VARIANT_SWATCH_HEX).map(([name, hex]) => {
+          {[
+            ...(customDesignAvailable ? [["custom", customDesignSwatch]] : []),
+            ...Object.entries(VARIANT_SWATCH_HEX),
+          ].map(([name, hex]) => {
             const selected = name === variant;
-            const label = VARIANT_LABELS[name] ?? name;
+            const label = name === "custom" ? "Color Studio design" : (VARIANT_LABELS[name] ?? name);
             return (
               <Box
                 key={name}
@@ -804,7 +843,7 @@ export default function Hud() {
   if (!entered || menuOpen) return null;
   return (
     <>
-      <BackButton />
+      <NavigationButtons />
       <CommunityLinks />
       {!touchMode && (
         <>

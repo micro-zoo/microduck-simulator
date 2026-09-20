@@ -76,6 +76,19 @@ the other three use the same headerless 24-column deployment contract.
 - WBC Motion: switching CSV starts the new motion at frame 0 without resetting
   physics or previous-action history
 
+## Color Studio
+
+The title screen links to a dedicated browser-based Color Studio (`?studio=1`).
+It reuses the simulator's production Microduck geometry and visual language,
+while adding per-part color controls, full-robot colorways, image decals and a
+live orbit preview. Export produces a standards-based `.3mf` package with the
+full assembly in millimeters, per-mesh base materials and, when supplied, the
+uploaded PNG texture and projected decal geometry. The picker includes the 30
+Bambu PLA Basic display colours and catalogue colour numbers; exact matches are
+named in the 3MF material table. Designs are saved locally, and **Run design**
+opens the real simulator with the same per-part palette on both feet and roller
+models.
+
 Roller mode only runs its Drive skill. Roll, ground pick, kicks, sit/stand
 and head-mode inputs are ignored until you switch back to Feet.
 
