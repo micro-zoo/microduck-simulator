@@ -7,6 +7,7 @@
 // right on screen.
 
 import * as THREE from "three";
+import { materialForMeshInstance, meshNameFromSelector } from "./mesh-selector.js";
 
 // ── Shared slot specs (identical on all four robots) ───────────────────
 // sRGB targets from the reference photo, converted to linear with a
@@ -249,16 +250,17 @@ export const materialHookFor = (v) => {
 
 export function materialMapForHexOverrides(overrides, base = VARIANTS.classic) {
   const map = meshMaterialsFor(base);
-  for (const [mesh, hex] of Object.entries(overrides ?? {})) {
+  for (const [selector, hex] of Object.entries(overrides ?? {})) {
     if (!/^#[0-9a-f]{6}$/i.test(hex)) continue;
+    const mesh = meshNameFromSelector(selector);
     const fallback = map[mesh] ?? base.mechGray;
-    map[mesh] = { ...fallback, color: new THREE.Color(hex).toArray() };
+    map[selector] = { ...fallback, color: new THREE.Color(hex).toArray() };
   }
   return map;
 }
 
 export const materialHookForMap = (map, fallback = VARIANTS.classic.mechGray) =>
-  (mesh) => map[mesh] ?? fallback;
+  (mesh, body) => materialForMeshInstance(map, mesh, body, fallback);
 
 // ── Live re-skin ────────────────────────────────────────────────────────
 // Swap materials on an already-built rig without reloading any STL.
@@ -333,7 +335,7 @@ export function applyMaterialMap(rig, map, fallback = VARIANTS.classic.mechGray)
   const fade = !!rig.placer?.parent;
   rig.root.traverse((o) => {
     if (!o.isMesh || !o.userData.meshName) return;
-    const spec = map[o.userData.meshName] ?? fallback;
+    const spec = materialForMeshInstance(map, o.userData.meshName, o.userData.bodyName, fallback);
     const target = matFor(spec);
     if (!fade) {
       fades.delete(o);

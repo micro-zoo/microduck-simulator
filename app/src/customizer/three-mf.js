@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { bambuLabel, closestBambuColor, exactBambuColor } from "./bambu-colors.js";
+import { meshInstanceKey, meshNameFromSelector } from "../game/mesh-selector.js";
 
 const encoder = new TextEncoder();
 
@@ -271,20 +272,24 @@ function csvCell(value) {
 }
 
 function orderedPrintableMeshes(root, meshOrder) {
-  const requestedNames = new Set(meshOrder);
-  const foundByName = new Map();
+  const requestedNames = new Set(meshOrder.map(meshNameFromSelector));
+  const foundBySelector = new Map();
   root.traverse((object) => {
     const meshName = object.userData?.meshName;
     if (object.isMesh && object.visible !== false && requestedNames.has(meshName)) {
-      if (!foundByName.has(meshName)) foundByName.set(meshName, []);
-      foundByName.get(meshName).push(object);
+      const exactSelector = meshInstanceKey(meshName, object.userData?.bodyName);
+      for (const selector of new Set([exactSelector, meshName])) {
+        if (!foundBySelector.has(selector)) foundBySelector.set(selector, []);
+        foundBySelector.get(selector).push(object);
+      }
     }
   });
-  const occurrenceByName = new Map();
-  return meshOrder.flatMap((meshName, absoluteIndex) => {
-    const occurrence = occurrenceByName.get(meshName) ?? 0;
-    occurrenceByName.set(meshName, occurrence + 1);
-    const mesh = foundByName.get(meshName)?.[occurrence];
+  const occurrenceBySelector = new Map();
+  return meshOrder.flatMap((selector, absoluteIndex) => {
+    const occurrence = occurrenceBySelector.get(selector) ?? 0;
+    occurrenceBySelector.set(selector, occurrence + 1);
+    const mesh = foundBySelector.get(selector)?.[occurrence];
+    const meshName = meshNameFromSelector(selector);
     return mesh ? [{ mesh, meshName, absoluteIndex }] : [];
   });
 }

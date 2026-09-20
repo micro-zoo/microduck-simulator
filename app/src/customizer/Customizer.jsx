@@ -14,55 +14,19 @@ import { MONO, ORANGE } from "../theme.js";
 import { createThreeMfBundle } from "./three-mf.js";
 import { BAMBU_PLA_BASIC, bambuLabel, closestBambuColor, exactBambuColor } from "./bambu-colors.js";
 import { saveStudioDesign } from "./design-storage.js";
+import {
+  colorOverridesForParts,
+  DEFAULT_COLORS,
+  PART_BY_ID,
+  PART_GROUPS,
+  PARTS,
+  partForMeshInstance,
+  PRINT_MESH_ORDER,
+} from "./studio-parts.js";
 
-const PART_GROUPS = [
-  {
-    label: "Head",
-    parts: [
-      { id: "head", label: "Head shell", meshes: ["top_head_shell.stl"], color: "#F2EFE8" },
-      { id: "headBand", label: "Head band", meshes: ["bottom_head_shell.stl"], color: "#FF7A2F" },
-      { id: "face", label: "Face plate", meshes: ["face_part.stl"], color: "#9B9892" },
-      { id: "eye", label: "Eye ring", meshes: ["noenoeil.stl"], color: "#FFB52E" },
-      { id: "beak", label: "Beak", meshes: ["soft_mouth_top.stl", "jaw.stl", "jaw_soft.stl"], color: "#FF7A2F" },
-    ],
-  },
-  {
-    label: "Body",
-    parts: [
-      { id: "body", label: "Body shell", meshes: ["trunk_base.stl", "left_shell.stl", "right_shell.stl"], color: "#F2EFE8" },
-      { id: "hips", label: "Hip covers", meshes: ["hip_l.stl"], color: "#8B8B90" },
-    ],
-  },
-  {
-    label: "Legs",
-    parts: [
-      { id: "leftLeg", label: "Left leg shell", meshes: ["upper_leg_left.stl"], color: "#F2EFE8" },
-      { id: "rightLeg", label: "Right leg shell", meshes: ["upper_leg_right.stl"], color: "#F2EFE8" },
-    ],
-  },
-  {
-    label: "Feet",
-    parts: [
-      { id: "leftFoot", label: "Left foot", meshes: ["foot_left.stl", "ankle_left.stl"], color: "#FF7A2F" },
-      { id: "rightFoot", label: "Right foot", meshes: ["foot_right.stl", "ankle_right.stl"], color: "#FF7A2F" },
-      { id: "soles", label: "Sole pads", meshes: ["sole_left.stl", "sole_right.stl"], color: "#FFD23F" },
-    ],
-  },
-];
-
-const PARTS = PART_GROUPS.flatMap((group) => group.parts);
-const PART_BY_ID = Object.fromEntries(PARTS.map((part) => [part.id, part]));
-const PART_BY_MESH = new Map(PARTS.flatMap((part) => part.meshes.map((mesh) => [mesh, part])));
 const MOBILE_GROUPS = PART_GROUPS.map((group) => ({ ...group, id: group.label.toLowerCase() }));
 const MOBILE_GROUP_BY_ID = Object.fromEntries(MOBILE_GROUPS.map((group) => [group.id, group]));
 const MOBILE_GROUP_ID_BY_PART = Object.fromEntries(MOBILE_GROUPS.flatMap((group) => group.parts.map((part) => [part.id, group.id])));
-// hip_l.stl is used by two physical covers. Repeating it reserves two stable
-// absolute export numbers instead of numbering whatever traversal finds first.
-const PHYSICAL_MESH_COPIES = { "hip_l.stl": 2 };
-const PRINT_MESH_ORDER = PARTS.flatMap((part) => part.meshes.flatMap((mesh) => (
-  Array.from({ length: PHYSICAL_MESH_COPIES[mesh] ?? 1 }, () => mesh)
-)));
-const DEFAULT_COLORS = Object.fromEntries(PARTS.map((part) => [part.id, part.color]));
 
 const QUICK_BAMBU_NAMES = new Set([
   "Jade White", "Silver", "Gray", "Black", "Orange", "Yellow",
@@ -81,23 +45,43 @@ const PRESETS = [
     id: "graphite",
     label: "After hours",
     stripe: ["#2F2F33", "#FFD23F", "#BFA9CF"],
-    colors: { ...DEFAULT_COLORS, head: "#2F2F33", body: "#232326", leftLeg: "#232326", rightLeg: "#232326", headBand: "#FFD23F", beak: "#FFD23F", leftFoot: "#FFD23F", rightFoot: "#FFD23F", eye: "#BFA9CF", soles: "#8068B0" },
+    colors: { ...DEFAULT_COLORS, head: "#2F2F33", bodyCore: "#232326", bodyLeft: "#232326", bodyRight: "#232326", leftLeg: "#232326", rightLeg: "#232326", headBand: "#FFD23F", jaw: "#FFD23F", leftAnkle: "#FFD23F", rightAnkle: "#FFD23F", leftFoot: "#FFD23F", rightFoot: "#FFD23F", eye: "#BFA9CF", leftSole: "#8068B0", rightSole: "#8068B0" },
   },
   {
     id: "lavender",
     label: "Ultraviolet",
     stripe: ["#B4A4D4", "#FFD23F", "#8068B0"],
-    colors: { ...DEFAULT_COLORS, head: "#B4A4D4", body: "#B4A4D4", leftLeg: "#B4A4D4", rightLeg: "#B4A4D4", headBand: "#FFD23F", beak: "#FFD23F", leftFoot: "#FFD23F", rightFoot: "#FFD23F", eye: "#A8DCE8", soles: "#8068B0" },
+    colors: { ...DEFAULT_COLORS, head: "#B4A4D4", bodyCore: "#B4A4D4", bodyLeft: "#B4A4D4", bodyRight: "#B4A4D4", leftLeg: "#B4A4D4", rightLeg: "#B4A4D4", headBand: "#FFD23F", jaw: "#FFD23F", leftAnkle: "#FFD23F", rightAnkle: "#FFD23F", leftFoot: "#FFD23F", rightFoot: "#FFD23F", eye: "#A8DCE8", leftSole: "#8068B0", rightSole: "#8068B0" },
   },
   {
     id: "sky",
     label: "Poolside",
     stripe: ["#A8DCE8", "#FF7A2F", "#FFD23F"],
-    colors: { ...DEFAULT_COLORS, head: "#A8DCE8", body: "#A8DCE8", leftLeg: "#A8DCE8", rightLeg: "#A8DCE8" },
+    colors: { ...DEFAULT_COLORS, head: "#A8DCE8", bodyCore: "#A8DCE8", bodyLeft: "#A8DCE8", bodyRight: "#A8DCE8", leftLeg: "#A8DCE8", rightLeg: "#A8DCE8" },
   },
 ];
 
 const standPose = Object.fromEntries(JOINT_NAMES.map((name, index) => [name, DEFAULT_POSE[index]]));
+const selectionOutlineMaterial = new THREE.MeshBasicMaterial({
+  color: ORANGE,
+  side: THREE.BackSide,
+  depthWrite: false,
+  toneMapped: false,
+});
+const selectionOutlines = new WeakMap();
+
+function selectionOutlineFor(mesh) {
+  if (selectionOutlines.has(mesh)) return selectionOutlines.get(mesh);
+  const outline = new THREE.Mesh(mesh.geometry, selectionOutlineMaterial);
+  outline.name = "studio-selection-outline";
+  outline.scale.setScalar(1.022);
+  outline.renderOrder = 2;
+  outline.visible = false;
+  outline.raycast = () => {};
+  mesh.add(outline);
+  selectionOutlines.set(mesh, outline);
+  return outline;
+}
 
 function Icon({ type }) {
   const paths = {
@@ -184,7 +168,7 @@ function StudioModel({ colors, selectedId, exportRef, onReady, onError, onSelect
     rig.placer.traverse((object) => {
       if (object.isLineSegments) object.raycast = () => {};
       if (!object.isMesh || !object.userData.meshName) return;
-      const part = PART_BY_MESH.get(object.userData.meshName);
+      const part = partForMeshInstance(object.userData.meshName, object.userData.bodyName);
       if (!part) return;
       object.userData.studioPartId = part.id;
       if (!object.userData.studioMaterial) {
@@ -201,8 +185,9 @@ function StudioModel({ colors, selectedId, exportRef, onReady, onError, onSelect
       }
       object.material.roughness = 0.42;
       object.material.metalness = 0.02;
-      object.material.emissive.set(part.id === selectedId ? ORANGE : "#000000");
-      object.material.emissiveIntensity = part.id === selectedId ? 0.1 : 0;
+      object.material.emissive.set("#000000");
+      object.material.emissiveIntensity = 0;
+      selectionOutlineFor(object).visible = part.id === selectedId;
     });
     if (!transitions.length) return;
     let frame = 0;
@@ -546,7 +531,7 @@ export default function Customizer() {
   const [notice, setNotice] = useState("");
   const exportRef = useRef({ root: null });
   const ready = useMemo(() => !loading && !loadError, [loading, loadError]);
-  const meshColors = useMemo(() => Object.fromEntries(PARTS.flatMap((part) => part.meshes.map((mesh) => [mesh, colors[part.id]]))), [colors]);
+  const meshColors = useMemo(() => colorOverridesForParts(colors), [colors]);
 
   useEffect(() => {
     const previousTitle = document.title;

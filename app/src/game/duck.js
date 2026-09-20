@@ -256,6 +256,7 @@ export async function buildRig(k, opts = {}) {
           // Mesh filename tag so callers can re-skin materials in place
           // (survives cloneRig: Object3D.copy deep-copies userData).
           m.userData.meshName = geom.mesh;
+          m.userData.bodyName = b.name;
           if (geom.pos) m.position.set(...geom.pos);
           if (geom.quat) m.quaternion.set(geom.quat[1], geom.quat[2], geom.quat[3], geom.quat[0]);
           g.add(m);
