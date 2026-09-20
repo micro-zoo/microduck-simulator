@@ -54,6 +54,9 @@ const PART_GROUPS = [
 const PARTS = PART_GROUPS.flatMap((group) => group.parts);
 const PART_BY_ID = Object.fromEntries(PARTS.map((part) => [part.id, part]));
 const PART_BY_MESH = new Map(PARTS.flatMap((part) => part.meshes.map((mesh) => [mesh, part])));
+const MOBILE_GROUPS = PART_GROUPS.map((group) => ({ ...group, id: group.label.toLowerCase() }));
+const MOBILE_GROUP_BY_ID = Object.fromEntries(MOBILE_GROUPS.map((group) => [group.id, group]));
+const MOBILE_GROUP_ID_BY_PART = Object.fromEntries(MOBILE_GROUPS.flatMap((group) => group.parts.map((part) => [part.id, group.id])));
 // hip_l.stl is used by two physical covers. Repeating it reserves two stable
 // absolute export numbers instead of numbering whatever traversal finds first.
 const PHYSICAL_MESH_COPIES = { "hip_l.stl": 2 };
@@ -121,29 +124,15 @@ function OrbitCamera({ action }) {
   useEffect(() => {
     camera.position.set(0.5, 0.31, 0.52);
     const controls = new OrbitControls(camera, gl.domElement);
-    const mobilePointer = window.matchMedia("(max-width: 899px) and (pointer: coarse)");
-    const previousTouchAction = gl.domElement.style.touchAction;
-    const configureTouch = () => {
-      controls.enabled = !mobilePointer.matches;
-      gl.domElement.style.touchAction = mobilePointer.matches ? "pan-y" : "none";
-    };
     controls.target.set(0, 0.13, 0);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.minDistance = 0.3;
     controls.maxDistance = 1.25;
     controls.enablePan = false;
-    configureTouch();
-    if (mobilePointer.addEventListener) mobilePointer.addEventListener("change", configureTouch);
-    else mobilePointer.addListener?.(configureTouch);
     controls.update();
     controlsRef.current = controls;
-    return () => {
-      if (mobilePointer.removeEventListener) mobilePointer.removeEventListener("change", configureTouch);
-      else mobilePointer.removeListener?.(configureTouch);
-      gl.domElement.style.touchAction = previousTouchAction;
-      controls.dispose();
-    };
+    return () => controls.dispose();
   }, [camera, gl]);
 
   useEffect(() => {
@@ -196,9 +185,11 @@ function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError,
     if (!rig) return;
     const transitions = [];
     rig.placer.traverse((object) => {
+      if (object.isLineSegments) object.raycast = () => {};
       if (!object.isMesh || !object.userData.meshName) return;
       const part = PART_BY_MESH.get(object.userData.meshName);
       if (!part) return;
+      object.userData.studioPartId = part.id;
       if (!object.userData.studioMaterial) {
         object.material = object.material.clone();
         object.userData.studioMaterial = true;
@@ -285,16 +276,16 @@ function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError,
   }, [exportRef, pattern, rig, selectedId]);
 
   if (!rig) return null;
-  const selectClickedPart = (event) => {
-    if (event.delta > 5) return;
-    const part = PART_BY_MESH.get(event.object?.userData?.meshName);
-    if (!part) return;
+  const selectPressedPart = (event) => {
+    const hits = [event.object, ...(event.intersections ?? []).map((hit) => hit.object)];
+    const partId = hits.find((object) => object?.userData?.studioPartId)?.userData?.studioPartId;
+    if (!partId) return;
     event.stopPropagation();
-    onSelect(part.id);
+    onSelect(partId);
   };
   return (
     <>
-      <primitive object={rig.placer} onClick={selectClickedPart} />
+      <primitive object={rig.placer} onPointerDown={selectPressedPart} />
       {decal ? <primitive object={decal} /> : null}
     </>
   );
@@ -337,7 +328,7 @@ const smallButtonSx = {
 
 function PartRail({ selectedId, colors, onSelect }) {
   return (
-    <Box component="aside" sx={{ ...panelSx, gridArea: "parts", borderRight: "1px solid", overflowY: "auto", p: "1.6rem 1.15rem 2.5rem", minWidth: 0 }}>
+    <Box component="aside" sx={{ ...panelSx, gridArea: "parts", display: { xs: "none", md: "block" }, borderRight: "1px solid", overflowY: "auto", p: "1.6rem 1.15rem 2.5rem", minWidth: 0 }}>
       <Typography sx={eyebrowSx}>01 / Select a part</Typography>
       <Typography component="h1" sx={{ mt: 1, fontFamily: ANTON, fontSize: "1.9rem", lineHeight: 1, textTransform: "uppercase", color: CREAM }}>
         Start with a shell.
@@ -430,22 +421,44 @@ function CanvasPanel({ colors, selectedId, pattern, exportRef, action, loading, 
         </Box>
       )}
 
-      <Box sx={{ position: "absolute", zIndex: 5, right: 22, bottom: 22, display: "grid", border: `2px solid ${COMIC_INK}`, boxShadow: `4px 4px 0 ${ORANGE}` }}>
+      <Box sx={{ position: "absolute", zIndex: 5, right: { xs: 12, md: 22 }, bottom: { xs: 12, md: 22 }, display: "grid", border: `2px solid ${COMIC_INK}`, boxShadow: `4px 4px 0 ${ORANGE}` }}>
         {[
           ["home", "home", "Reset view"],
           ["plus", "in", "Zoom in"],
           ["minus", "out", "Zoom out"],
         ].map(([icon, type, label]) => (
-          <Box key={type} component="button" type="button" aria-label={label} onClick={() => onView(type)} sx={{ appearance: "none", width: 42, height: 42, display: "grid", placeItems: "center", border: "none", borderBottom: type === "out" ? "none" : "1px solid rgba(16,16,24,0.16)", background: CREAM, color: COMIC_INK, cursor: "pointer", "&:hover": { background: ORANGE }, "&:focus-visible": { outline: `3px dashed ${ORANGE}`, outlineOffset: -5 } }}>
+          <Box key={type} component="button" type="button" aria-label={label} onClick={() => onView(type)} sx={{ appearance: "none", width: { xs: 36, md: 42 }, height: { xs: 36, md: 42 }, display: "grid", placeItems: "center", border: "none", borderBottom: type === "out" ? "none" : "1px solid rgba(16,16,24,0.16)", background: CREAM, color: COMIC_INK, cursor: "pointer", "&:hover": { background: ORANGE }, "&:focus-visible": { outline: `3px dashed ${ORANGE}`, outlineOffset: -5 } }}>
             <Icon type={icon} />
           </Box>
         ))}
       </Box>
-      <Typography sx={{ position: "absolute", zIndex: 2, left: 22, bottom: 20, fontFamily: MONO, fontSize: "0.62rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.34)" }}>
-        DRAG TO ORBIT · SCROLL TO ZOOM
+      <Typography sx={{ position: "absolute", zIndex: 2, left: { xs: 12, md: 22 }, bottom: { xs: 12, md: 20 }, maxWidth: { xs: "65%", md: "none" }, fontFamily: MONO, fontSize: "0.62rem", letterSpacing: "0.08em", color: "rgba(255,255,255,0.42)" }}>
+        <Box component="span" sx={{ display: { xs: "inline", md: "none" } }}>TAP PART · DRAG TO ROTATE</Box>
+        <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>DRAG TO ORBIT · SCROLL TO ZOOM</Box>
       </Typography>
     </Box>
   );
+}
+
+async function patternFromFile(file) {
+  if (!file || !file.type.startsWith("image/")) return null;
+  const sourceUrl = URL.createObjectURL(file);
+  const image = new Image();
+  image.decoding = "async";
+  image.src = sourceUrl;
+  await image.decode();
+  const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  const normalizedUrl = URL.createObjectURL(blob);
+  const normalizedImage = new Image();
+  normalizedImage.src = normalizedUrl;
+  await normalizedImage.decode();
+  URL.revokeObjectURL(sourceUrl);
+  return { name: file.name, url: normalizedUrl, image: normalizedImage, bytes: new Uint8Array(await blob.arrayBuffer()) };
 }
 
 function ControlRail({ selectedId, colors, tab, setTab, pattern, onColor, onPreset, onRandom, onPattern }) {
@@ -464,28 +477,12 @@ function ControlRail({ selectedId, colors, tab, setTab, pattern, onColor, onPres
   };
 
   const handleFile = async (file) => {
-    if (!file || !file.type.startsWith("image/")) return;
-    const sourceUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.decoding = "async";
-    image.src = sourceUrl;
-    await image.decode();
-    const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-    const normalizedUrl = URL.createObjectURL(blob);
-    const normalizedImage = new Image();
-    normalizedImage.src = normalizedUrl;
-    await normalizedImage.decode();
-    URL.revokeObjectURL(sourceUrl);
-    onPattern({ name: file.name, url: normalizedUrl, image: normalizedImage, bytes: new Uint8Array(await blob.arrayBuffer()) });
+    const next = await patternFromFile(file);
+    if (next) onPattern(next);
   };
 
   return (
-    <Box component="aside" sx={{ ...panelSx, gridArea: "controls", borderLeft: "1px solid", overflowY: "auto", p: "1.6rem 1.35rem 2.5rem", minWidth: 0 }}>
+    <Box component="aside" sx={{ ...panelSx, gridArea: "controls", display: { xs: "none", md: "block" }, borderLeft: "1px solid", overflowY: "auto", p: "1.6rem 1.35rem 2.5rem", minWidth: 0 }}>
       <Typography sx={eyebrowSx}>02 / Make it yours</Typography>
       <Box role="tablist" aria-label="Customization mode" sx={{ mt: "1rem", p: "0.25rem", display: "grid", gridTemplateColumns: "1fr 1fr", background: "#1a1a22", border: "1px solid rgba(255,255,255,0.08)" }}>
         {[['color', 'Color'], ['pattern', 'Pattern']].map(([id, label]) => (
@@ -573,10 +570,120 @@ function ControlRail({ selectedId, colors, tab, setTab, pattern, onColor, onPres
   );
 }
 
+function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor, onPreset, onRandom, pattern, onPattern }) {
+  const selected = PART_BY_ID[selectedId];
+  const bambuMatch = closestBambuColor(colors[selectedId]);
+  const activeGroup = MOBILE_GROUP_BY_ID[mode] ?? MOBILE_GROUPS[0];
+  const inputRef = useRef(null);
+  const chooseGroup = (groupId) => {
+    if (groupId === "pattern") {
+      setMode(groupId);
+      return;
+    }
+    const group = MOBILE_GROUP_BY_ID[groupId];
+    setMode(groupId);
+    if (!group.parts.some((part) => part.id === selectedId)) onSelect(group.parts[0].id);
+  };
+  const handleFile = async (file) => {
+    const next = await patternFromFile(file);
+    if (next) onPattern(next);
+  };
+
+  return (
+    <Box
+      component="aside"
+      sx={{
+        ...panelSx,
+        gridArea: "mobile",
+        display: { xs: "grid", md: "none" },
+        minWidth: 0,
+        minHeight: 0,
+        gridTemplateRows: "48px 40px minmax(0,1fr)",
+        borderTop: "1px solid rgba(255,255,255,0.14)",
+        background: "rgba(17,17,24,0.96)",
+        backdropFilter: "blur(18px) saturate(140%)",
+        overflow: "hidden",
+      }}
+    >
+      <Box sx={{ px: "0.7rem", display: "flex", alignItems: "center", gap: "0.65rem", minWidth: 0 }}>
+        <Box sx={{ position: "relative", width: 34, height: 34, flex: "0 0 auto", background: colors[selectedId], border: `2px solid ${CREAM}`, boxShadow: `2px 2px 0 ${ORANGE}` }}>
+          <Box component="input" type="color" aria-label={`Choose ${selected.label} custom color`} value={colors[selectedId]} onChange={(event) => onColor(event.target.value.toUpperCase())} sx={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0 }} />
+        </Box>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: ANTON, fontSize: "0.9rem", lineHeight: 1.1, letterSpacing: "0.035em", textTransform: "uppercase" }}>{selected.label}</Typography>
+          <Typography sx={{ mt: 0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: MONO, fontSize: "0.62rem", color: ORANGE }}>{bambuMatch.code} · {bambuMatch.name}</Typography>
+        </Box>
+        <Box component="button" type="button" aria-label="Randomize the full colorway" onClick={onRandom} sx={{ appearance: "none", width: 36, height: 36, flex: "0 0 auto", display: "grid", placeItems: "center", border: "1px solid rgba(255,255,255,0.2)", background: "#0b0b10", color: CREAM, "&:active": { transform: "scale(0.94)", background: ORANGE, color: COMIC_INK } }}>
+          <Icon type="shuffle" />
+        </Box>
+      </Box>
+
+      <Box role="tablist" aria-label="Part categories" sx={{ mx: "0.7rem", p: "3px", display: "grid", gridTemplateColumns: "repeat(5,1fr)", background: "#09090d", border: "1px solid rgba(255,255,255,0.1)" }}>
+        {[...MOBILE_GROUPS.map((group) => [group.id, group.label]), ["pattern", "Art"]].map(([id, label]) => (
+          <Box component="button" type="button" role="tab" aria-selected={mode === id} key={id} onClick={() => chooseGroup(id)} sx={{ appearance: "none", minWidth: 0, border: 0, background: mode === id ? CREAM : "transparent", color: mode === id ? COMIC_INK : "rgba(255,255,255,0.54)", fontFamily: ANTON, fontSize: "0.68rem", letterSpacing: "0.035em", textTransform: "uppercase", "&:active": { transform: "scale(0.97)" } }}>
+            {label}
+          </Box>
+        ))}
+      </Box>
+
+      <Box sx={{ minHeight: 0, overflow: "hidden", p: "0.55rem 0.7rem max(0.55rem, env(safe-area-inset-bottom))" }}>
+        {mode !== "pattern" ? (
+          <Box sx={{ height: "100%", display: "grid", gridTemplateRows: "36px minmax(0,1fr) 30px", gap: "0.35rem" }}>
+            <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${activeGroup.parts.length},minmax(0,1fr))`, gap: "0.35rem" }}>
+              {activeGroup.parts.map((part) => {
+                const active = part.id === selectedId;
+                return (
+                  <Box component="button" type="button" key={part.id} aria-pressed={active} onClick={() => onSelect(part.id)} sx={{ appearance: "none", minWidth: 0, p: "0.25rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", border: "1px solid", borderColor: active ? ORANGE : "rgba(255,255,255,0.12)", background: active ? CREAM : "#0b0b10", color: active ? COMIC_INK : CREAM, fontSize: "0.66rem", lineHeight: 1, fontWeight: 750, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", "&:active": { transform: "scale(0.97)" } }}>
+                    <Box sx={{ width: 11, height: 11, flex: "0 0 auto", background: colors[part.id], border: "1px solid rgba(128,128,128,0.6)" }} />
+                    <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{part.label}</Box>
+                  </Box>
+                );
+              })}
+            </Box>
+            <Box sx={{ minHeight: 0, display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gridTemplateRows: "repeat(5,minmax(0,1fr))", gap: "0.2rem" }}>
+              {BAMBU_PLA_BASIC.map((swatch) => {
+                const active = colors[selectedId] === swatch.hex;
+                return (
+                  <Box component="button" type="button" key={swatch.code} title={`${bambuLabel(swatch)} · ${swatch.hex}`} aria-label={`Use Bambu ${bambuLabel(swatch)}`} aria-pressed={active} onClick={() => onColor(swatch.hex)} sx={{ appearance: "none", height: "min(40px, 100%)", maxWidth: 40, aspectRatio: "1", placeSelf: "center", borderRadius: "50%", border: active ? `3px solid ${CREAM}` : "2px solid rgba(255,255,255,0.22)", outline: active ? `2px solid ${ORANGE}` : "none", outlineOffset: 1, background: swatch.hex, boxShadow: swatch.hex === "#000000" ? "inset 0 0 0 1px rgba(255,255,255,0.25)" : "none", "&:active": { transform: "scale(0.88)" } }} />
+                );
+              })}
+            </Box>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: "0.35rem" }}>
+              {PRESETS.map((preset) => (
+                <Box component="button" type="button" key={preset.id} aria-label={`Apply ${preset.label} colorway`} onClick={() => onPreset(preset.colors)} sx={{ appearance: "none", minWidth: 0, p: 0, display: "grid", gridTemplateColumns: "repeat(3,1fr)", border: "1px solid rgba(255,255,255,0.18)", "&:active": { transform: "scale(0.95)" } }}>
+                  {preset.stripe.map((color) => <Box key={color} sx={{ background: color }} />)}
+                </Box>
+              ))}
+              <Box component="button" type="button" aria-label="Random colorway" onClick={onRandom} sx={{ appearance: "none", display: "grid", placeItems: "center", border: "1px solid rgba(255,255,255,0.18)", background: "#0b0b10", color: CREAM, "&:active": { transform: "scale(0.95)" } }}><Icon type="shuffle" /></Box>
+            </Box>
+          </Box>
+        ) : null}
+
+        {mode === "pattern" ? (
+          <Box sx={{ height: "100%", display: "grid", gridTemplateRows: pattern ? "minmax(0,1fr) 36px" : "1fr", gap: "0.5rem" }}>
+            <Box component="button" type="button" onClick={() => inputRef.current?.click()} sx={{ appearance: "none", minHeight: 0, p: "0.75rem", display: "grid", placeItems: "center", border: `2px dashed ${pattern ? ORANGE : "rgba(255,255,255,0.24)"}`, background: pattern ? `center / contain no-repeat url(${pattern.url}) #0b0b10` : "#0b0b10", color: CREAM, textAlign: "center" }}>
+              {!pattern ? (
+                <Box>
+                  <Box sx={{ display: "grid", placeItems: "center", width: 38, height: 38, mx: "auto", mb: 0.65, color: ORANGE, border: `2px solid ${ORANGE}` }}><Icon type="upload" /></Box>
+                  <Typography sx={{ fontFamily: ANTON, fontSize: "0.86rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>Upload artwork</Typography>
+                  <Typography sx={{ mt: 0.3, fontSize: "0.7rem", color: "rgba(255,255,255,0.48)" }}>PNG, JPG or WEBP</Typography>
+                </Box>
+              ) : <Typography sx={{ alignSelf: "end", px: "0.4rem", py: "0.2rem", background: "rgba(8,8,12,0.78)", fontFamily: MONO, fontSize: "0.62rem" }}>{pattern.name}</Typography>}
+            </Box>
+            <Box component="input" ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => handleFile(event.target.files?.[0])} />
+            {pattern ? <Box component="button" type="button" onClick={() => onPattern(null)} sx={{ appearance: "none", border: "1px solid rgba(255,255,255,0.22)", background: "transparent", color: CREAM, fontFamily: MONO, fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase" }}>Remove artwork</Box> : null}
+          </Box>
+        ) : null}
+      </Box>
+    </Box>
+  );
+}
+
 export default function Customizer() {
   const [colors, setColors] = useState(DEFAULT_COLORS);
   const [selectedId, setSelectedId] = useState("head");
   const [tab, setTab] = useState("color");
+  const [mobileMode, setMobileMode] = useState("head");
   const [pattern, setPattern] = useState(null);
   const [viewAction, setViewAction] = useState({ seq: 0, type: "home" });
   const [loading, setLoading] = useState(true);
@@ -597,9 +704,9 @@ export default function Customizer() {
     const htmlOverflow = document.documentElement.style.overflow;
     const bodyOverflow = document.body.style.overflow;
     const bodyOverscroll = document.body.style.overscrollBehaviorY;
-    document.documentElement.style.overflow = "auto";
-    document.body.style.overflow = "auto";
-    document.body.style.overscrollBehaviorY = "contain";
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehaviorY = "none";
     return () => {
       document.documentElement.style.overflow = htmlOverflow;
       document.body.style.overflow = bodyOverflow;
@@ -621,6 +728,10 @@ export default function Customizer() {
     saveStudioDesign({ colors, meshColors });
   }, [colors, meshColors]);
 
+  const selectPart = useCallback((partId) => {
+    setSelectedId(partId);
+    setMobileMode(MOBILE_GROUP_ID_BY_PART[partId] ?? "head");
+  }, []);
   const setSelectedColor = (color) => setColors((current) => ({ ...current, [selectedId]: color.toUpperCase() }));
   const selectPattern = (next) => {
     if (pattern?.url) URL.revokeObjectURL(pattern.url);
@@ -666,30 +777,31 @@ export default function Customizer() {
   };
 
   return (
-    <Box sx={{ minHeight: "100dvh", height: { xs: "auto", md: "100dvh" }, overflow: { xs: "visible", md: "hidden" }, WebkitOverflowScrolling: "touch", background: "#08080c", color: CREAM }}>
-      <Box component="header" sx={{ position: "relative", zIndex: 10, height: 66, display: "flex", alignItems: "center", gap: { xs: 1, sm: 2 }, px: { xs: 1.2, sm: 2.2 }, borderBottom: "1px solid rgba(255,255,255,0.1)", background: "#0b0b10" }}>
+    <Box sx={{ height: "100dvh", overflow: "hidden", background: "#08080c", color: CREAM }}>
+      <Box component="header" sx={{ position: "relative", zIndex: 10, height: { xs: 58, md: 66 }, display: "flex", alignItems: "center", gap: { xs: 0.75, sm: 2 }, px: { xs: 0.85, sm: 2.2 }, borderBottom: "1px solid rgba(255,255,255,0.1)", background: "#0b0b10" }}>
         <Box component="a" href="./" aria-label="Back to Microduck simulator" sx={{ display: "flex", alignItems: "center", gap: 1, color: CREAM, textDecoration: "none" }}>
-          <Box component="img" src={signed("./assets/duck-head-mark.webp")} alt="" sx={{ width: 38, height: 30, objectFit: "contain", filter: "drop-shadow(2px 2px 0 rgba(0,0,0,.5))" }} />
+          <Box component="img" src={signed("./assets/duck-head-mark.webp")} alt="" sx={{ width: { xs: 32, md: 38 }, height: { xs: 26, md: 30 }, objectFit: "contain", filter: "drop-shadow(2px 2px 0 rgba(0,0,0,.5))" }} />
           <Typography sx={{ display: { xs: "none", sm: "block" }, fontFamily: ANTON, fontSize: "1.2rem", letterSpacing: "0.025em", textTransform: "uppercase" }}>Microduck</Typography>
         </Box>
         <Box sx={{ width: 1, height: 24, background: "rgba(255,255,255,0.16)" }} />
         <Typography sx={{ fontFamily: MONO, fontSize: { xs: "0.66rem", sm: "0.72rem" }, fontWeight: 700, letterSpacing: "0.13em", textTransform: "uppercase", color: "rgba(255,255,255,0.58)" }}>Color Studio</Typography>
         <Typography sx={{ display: { xs: "none", lg: "block" }, ml: "auto", mr: "auto", fontSize: "0.78rem", color: "rgba(255,255,255,0.34)" }}>Make the hardware unmistakably yours.</Typography>
-        <Box component="button" type="button" aria-label="Run this design in the simulator" disabled={!ready} onClick={runInSimulator} sx={{ ml: { xs: "auto", lg: 0 }, ...smallButtonSx, minHeight: 42, display: "flex", alignItems: "center", gap: "0.45rem", background: CREAM, boxShadow: `4px 4px 0 ${ORANGE}`, opacity: !ready ? 0.55 : 1 }}>
+        <Box component="button" type="button" aria-label="Run this design in the simulator" disabled={!ready} onClick={runInSimulator} sx={{ ml: { xs: "auto", lg: 0 }, ...smallButtonSx, minHeight: { xs: 36, md: 42 }, px: { xs: 0.65, md: 0.9 }, display: "flex", alignItems: "center", gap: "0.45rem", background: CREAM, boxShadow: `4px 4px 0 ${ORANGE}`, opacity: !ready ? 0.55 : 1 }}>
           <Icon type="play" />
           <Box component="span" sx={{ display: { xs: "none", md: "inline" } }}>Run design</Box>
         </Box>
-        <Box component="button" type="button" aria-label={exporting ? "Building 3MF ZIP package" : "Export 3MF ZIP package"} disabled={!ready || exporting} onClick={exportDesign} sx={{ ...smallButtonSx, minHeight: 42, display: "flex", alignItems: "center", gap: "0.5rem", background: ORANGE, boxShadow: `4px 4px 0 ${CREAM}`, opacity: !ready ? 0.55 : 1, "&:disabled": { cursor: "wait" } }}>
+        <Box component="button" type="button" aria-label={exporting ? "Building 3MF ZIP package" : "Export 3MF ZIP package"} disabled={!ready || exporting} onClick={exportDesign} sx={{ ...smallButtonSx, minHeight: { xs: 36, md: 42 }, px: { xs: 0.65, md: 0.9 }, display: "flex", alignItems: "center", gap: "0.5rem", background: ORANGE, boxShadow: `4px 4px 0 ${CREAM}`, opacity: !ready ? 0.55 : 1, "&:disabled": { cursor: "wait" } }}>
           {exporting ? <CircularProgress size={16} sx={{ color: COMIC_INK }} /> : null}
           <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{exporting ? "Building" : "Export ZIP"}</Box>
           <Icon type="arrow" />
         </Box>
       </Box>
 
-      <Box sx={{ height: { xs: "auto", md: "calc(100dvh - 66px)" }, display: "grid", gridTemplateAreas: { xs: '"preview" "parts" "controls"', md: '"parts preview controls"' }, gridTemplateColumns: { xs: "1fr", md: "230px minmax(360px,1fr) 300px", xl: "258px minmax(520px,1fr) 348px" }, gridTemplateRows: { xs: "minmax(520px, 68vh) auto auto", md: "1fr" } }}>
-        <PartRail selectedId={selectedId} colors={colors} onSelect={setSelectedId} />
-        <CanvasPanel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} action={viewAction} loading={loading} error={loadError} onReady={handleModelReady} onError={handleModelError} onView={(type) => setViewAction(({ seq }) => ({ seq: seq + 1, type }))} onSelect={setSelectedId} />
+      <Box sx={{ height: { xs: "calc(100dvh - 58px)", md: "calc(100dvh - 66px)" }, display: "grid", gridTemplateAreas: { xs: '"preview" "mobile"', md: '"parts preview controls"' }, gridTemplateColumns: { xs: "1fr", md: "230px minmax(360px,1fr) 300px", xl: "258px minmax(520px,1fr) 348px" }, gridTemplateRows: { xs: "minmax(180px,1fr) clamp(300px,46dvh,340px)", md: "1fr" }, overflow: "hidden", "@media (max-width:899px) and (max-height:600px)": { gridTemplateAreas: '"preview mobile"', gridTemplateColumns: "minmax(0,1fr) minmax(300px,44vw)", gridTemplateRows: "1fr" } }}>
+        <PartRail selectedId={selectedId} colors={colors} onSelect={selectPart} />
+        <CanvasPanel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} action={viewAction} loading={loading} error={loadError} onReady={handleModelReady} onError={handleModelError} onView={(type) => setViewAction(({ seq }) => ({ seq: seq + 1, type }))} onSelect={selectPart} />
         <ControlRail selectedId={selectedId} colors={colors} tab={tab} setTab={setTab} pattern={pattern} onColor={setSelectedColor} onPreset={(next) => setColors({ ...next })} onRandom={randomize} onPattern={selectPattern} />
+        <MobileStudioDock mode={mobileMode} setMode={setMobileMode} selectedId={selectedId} colors={colors} onSelect={selectPart} onColor={setSelectedColor} onPreset={(next) => setColors({ ...next })} onRandom={randomize} pattern={pattern} onPattern={selectPattern} />
       </Box>
 
       {notice ? (
