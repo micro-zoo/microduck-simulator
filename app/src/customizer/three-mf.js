@@ -13,15 +13,15 @@ function escapeXml(value) {
     .replaceAll("'", "&apos;");
 }
 
-function colorHex(material) {
+function colorHex(material, opacityOverride = null) {
   const color = material?.color ?? new THREE.Color("#b9b9bd");
-  const alpha = Math.round(255 * (material?.opacity ?? 1))
+  const alpha = Math.round(255 * (opacityOverride ?? material?.opacity ?? 1))
     .toString(16)
     .padStart(2, "0");
   return `#${color.getHexString(THREE.SRGBColorSpace).toUpperCase()}${alpha.toUpperCase()}`;
 }
 
-function geometryRecord(mesh, { textured = false } = {}) {
+function geometryRecord(mesh, { textured = false, forceOpaque = false } = {}) {
   const geometry = mesh.geometry;
   const positions = geometry?.getAttribute("position");
   if (!positions || positions.count < 3) return null;
@@ -59,7 +59,7 @@ function geometryRecord(mesh, { textured = false } = {}) {
     vertices,
     triangles,
     textureCoordinates,
-    color: colorHex(mesh.material),
+    color: colorHex(mesh.material, forceOpaque ? 1 : null),
     textured: !!uv,
   };
 }
@@ -70,7 +70,7 @@ function modelXml({ root, decal, selectedPart, includeMeshes = null }) {
   root.traverse((object) => {
     if (!object.isMesh || object.visible === false) return;
     if (includeMeshes && !includeMeshes.has(object)) return;
-    const record = geometryRecord(object);
+    const record = geometryRecord(object, { forceOpaque: includeMeshes?.has(object) ?? false });
     if (record) records.push(record);
   });
 
@@ -326,7 +326,7 @@ export function createThreeMfBundle({
 
   printable.forEach(({ mesh, meshName, absoluteIndex }) => {
     const absoluteNumber = String(absoluteIndex + 1).padStart(width, "0");
-    const hex = colorHex(mesh.material).slice(0, 7);
+    const hex = colorHex(mesh.material, 1).slice(0, 7);
     const filament = exactBambuColor(hex) ?? closestBambuColor(hex);
     const colorCode = filament.code;
     const filename = `duck-${absoluteNumber}-${colorCode}.3mf`;

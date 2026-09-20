@@ -77,7 +77,9 @@ test("ZIP bundle includes a complete model and absolutely numbered parts grouped
     root.add(mesh);
     return mesh;
   };
-  addPart("head.stl", "head", "Head shell", "#ff6a13");
+  const selectedHead = addPart("head.stl", "head", "Head shell", "#ff6a13");
+  selectedHead.material.transparent = true;
+  selectedHead.material.opacity = 0.72;
   addPart("hip.stl", "hip_left", "Left hip cover", "#000000");
   addPart("hip.stl", "hip_right", "Right hip cover", "#ffffff");
 
@@ -96,6 +98,8 @@ test("ZIP bundle includes a complete model and absolutely numbered parts grouped
   assert.match(binary, /parts\/10100\/duck-02-10100\.3mf/);
   assert.match(binary, /parts\/10101\/duck-03-10101\.3mf/);
   assert.deepEqual(bundle.manifest.map((part) => part.part), ["Head shell", "Right hip cover", "Left hip cover"]);
+  assert.match(binary, /displaycolor="#FF6A13FF"/);
+  assert.doesNotMatch(binary, /displaycolor="#FF6A13B8"/);
   assert.match(binary, /absolute_number,filename,part,source_mesh,bambu_color_code/);
 });
 

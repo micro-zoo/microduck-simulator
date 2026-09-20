@@ -62,38 +62,9 @@ const PRESETS = [
 ];
 
 const standPose = Object.fromEntries(JOINT_NAMES.map((name, index) => [name, DEFAULT_POSE[index]]));
-const selectionOutlineOuterMaterial = new THREE.MeshBasicMaterial({
-  color: CREAM,
-  side: THREE.BackSide,
-  depthWrite: false,
-  toneMapped: false,
-});
-const selectionOutlineInnerMaterial = new THREE.MeshBasicMaterial({
-  color: COMIC_INK,
-  side: THREE.BackSide,
-  depthWrite: false,
-  toneMapped: false,
-});
-const selectionOutlines = new WeakMap();
-
-function selectionOutlineFor(mesh) {
-  if (selectionOutlines.has(mesh)) return selectionOutlines.get(mesh);
-  const indicator = new THREE.Group();
-  indicator.name = "studio-selection-indicator";
-  indicator.visible = false;
-  const outer = new THREE.Mesh(mesh.geometry, selectionOutlineOuterMaterial);
-  outer.scale.setScalar(1.055);
-  outer.renderOrder = 2;
-  outer.raycast = () => {};
-  const inner = new THREE.Mesh(mesh.geometry, selectionOutlineInnerMaterial);
-  inner.scale.setScalar(1.026);
-  inner.renderOrder = 3;
-  inner.raycast = () => {};
-  indicator.add(outer, inner);
-  mesh.add(indicator);
-  selectionOutlines.set(mesh, indicator);
-  return indicator;
-}
+const SELECTED_OPACITY_MIN = 0.72;
+const SELECTED_OPACITY_MAX = 1;
+const SELECTED_BREATHING_SPEED = Math.PI * 1.15;
 
 function Icon({ type }) {
   const paths = {
@@ -148,6 +119,13 @@ function OrbitCamera({ action }) {
 
 function StudioModel({ colors, selectedId, exportRef, onReady, onError, onSelect }) {
   const [rig, setRig] = useState(null);
+  const selectedMeshesRef = useRef([]);
+
+  useFrame(({ clock }) => {
+    const wave = (Math.sin(clock.elapsedTime * SELECTED_BREATHING_SPEED) + 1) / 2;
+    const opacity = THREE.MathUtils.lerp(SELECTED_OPACITY_MIN, SELECTED_OPACITY_MAX, wave);
+    for (const mesh of selectedMeshesRef.current) mesh.material.opacity = opacity;
+  });
 
   useEffect(() => {
     let live = true;
@@ -177,6 +155,7 @@ function StudioModel({ colors, selectedId, exportRef, onReady, onError, onSelect
   useLayoutEffect(() => {
     if (!rig) return;
     const transitions = [];
+    const selectedMeshes = [];
     rig.placer.traverse((object) => {
       if (object.isLineSegments) object.raycast = () => {};
       if (!object.isMesh || !object.userData.meshName) return;
@@ -203,8 +182,16 @@ function StudioModel({ colors, selectedId, exportRef, onReady, onError, onSelect
       object.material.metalness = 0.02;
       object.material.emissive.set("#000000");
       object.material.emissiveIntensity = 0;
-      selectionOutlineFor(object).visible = part.id === selectedId;
+      const selected = part.id === selectedId;
+      if (object.material.transparent !== selected) {
+        object.material.transparent = selected;
+        object.material.depthWrite = !selected;
+        object.material.needsUpdate = true;
+      }
+      object.material.opacity = selected ? SELECTED_OPACITY_MAX : 1;
+      if (selected) selectedMeshes.push(object);
     });
+    selectedMeshesRef.current = selectedMeshes;
     if (!transitions.length) return;
     let frame = 0;
     const started = performance.now();
