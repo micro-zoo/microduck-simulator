@@ -5,7 +5,6 @@ import Typography from "@mui/material/Typography";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { applyPose, buildRig, groundFullBody, loadKinematics, MODEL_DIR } from "../game/duck.js";
 import { DEFAULT_POSE, JOINT_NAMES } from "../game/constants.js";
 import { materialHookFor, VARIANTS } from "../game/variants.js";
@@ -106,7 +105,6 @@ function Icon({ type }) {
     plus: <><path d="M12 5v14"/><path d="M5 12h14"/></>,
     minus: <path d="M5 12h14"/>,
     arrow: <><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>,
-    upload: <><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 14v5h14v-5"/></>,
     shuffle: <><path d="M4 7h3c5 0 5 10 10 10h3"/><path d="m17 14 3 3-3 3"/><path d="M4 17h3c2 0 3.2-1.5 4.3-3.3"/><path d="M14 7h3l3-3"/><path d="m17 4 3 3-3 3"/></>,
     play: <path d="m8 5 11 7-11 7Z"/>,
   };
@@ -152,9 +150,8 @@ function OrbitCamera({ action }) {
   return null;
 }
 
-function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError, onSelect }) {
+function StudioModel({ colors, selectedId, exportRef, onReady, onError, onSelect }) {
   const [rig, setRig] = useState(null);
-  const [decal, setDecal] = useState(null);
 
   useEffect(() => {
     let live = true;
@@ -222,59 +219,6 @@ function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError,
     return () => cancelAnimationFrame(frame);
   }, [colors, rig, selectedId]);
 
-  useEffect(() => {
-    if (!rig || !pattern?.image) {
-      setDecal(null);
-      exportRef.current.decal = null;
-      return;
-    }
-    rig.placer.updateWorldMatrix(true, true);
-    const part = PART_BY_ID[selectedId];
-    let target = null;
-    rig.placer.traverse((object) => {
-      if (!target && object.isMesh && part.meshes.includes(object.userData.meshName)) target = object;
-    });
-    if (!target) return;
-
-    target.updateWorldMatrix(true, false);
-    const bounds = new THREE.Box3().setFromObject(target);
-    const size = bounds.getSize(new THREE.Vector3());
-    const center = bounds.getCenter(new THREE.Vector3());
-    const position = center.clone();
-    position.x = bounds.max.x + 0.0006;
-    const decalSize = new THREE.Vector3(
-      Math.max(0.009, Math.min(0.045, size.z * 0.72)),
-      Math.max(0.009, Math.min(0.045, size.y * 0.72)),
-      Math.max(0.012, size.x * 1.2),
-    );
-    const geometry = new DecalGeometry(target, position, new THREE.Euler(0, Math.PI / 2, 0), decalSize);
-    if (!geometry.getAttribute("position")?.count) return;
-    const texture = new THREE.Texture(pattern.image);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.needsUpdate = true;
-    const material = new THREE.MeshStandardMaterial({
-      map: texture,
-      transparent: true,
-      roughness: 0.52,
-      metalness: 0,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-    });
-    const nextDecal = new THREE.Mesh(geometry, material);
-    nextDecal.name = "Custom pattern";
-    nextDecal.userData.targetMesh = target;
-    nextDecal.renderOrder = 4;
-    setDecal(nextDecal);
-    exportRef.current.decal = nextDecal;
-    return () => {
-      exportRef.current.decal = null;
-      geometry.dispose();
-      material.dispose();
-      texture.dispose();
-    };
-  }, [exportRef, pattern, rig, selectedId]);
-
   if (!rig) return null;
   const selectPressedPart = (event) => {
     const hits = [event.object, ...(event.intersections ?? []).map((hit) => hit.object)];
@@ -283,12 +227,7 @@ function StudioModel({ colors, selectedId, pattern, exportRef, onReady, onError,
     event.stopPropagation();
     onSelect(partId);
   };
-  return (
-    <>
-      <primitive object={rig.placer} onPointerDown={selectPressedPart} />
-      {decal ? <primitive object={decal} /> : null}
-    </>
-  );
+  return <primitive object={rig.placer} onPointerDown={selectPressedPart} />;
 }
 
 const panelSx = {
@@ -385,7 +324,7 @@ function PartRail({ selectedId, colors, onSelect }) {
   );
 }
 
-function CanvasPanel({ colors, selectedId, pattern, exportRef, action, loading, error, onReady, onError, onView, onSelect }) {
+function CanvasPanel({ colors, selectedId, exportRef, action, loading, error, onReady, onError, onView, onSelect }) {
   return (
     <Box component="main" sx={{ gridArea: "preview", position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden", background: "#0b0b10" }}>
       <HalftoneRamp color="rgba(255, 122, 47, 0.09)" size={22} corner="bottom-left" reach={72} />
@@ -401,7 +340,7 @@ function CanvasPanel({ colors, selectedId, pattern, exportRef, action, loading, 
         <hemisphereLight color="#fff8eb" groundColor="#1c1823" intensity={1.25} />
         <directionalLight color="#fff0d6" position={[1.5, 2.2, 1.8]} intensity={2.6} />
         <directionalLight color={ORANGE} position={[-1.2, 0.8, -1.2]} intensity={1.15} />
-        <StudioModel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} onReady={onReady} onError={onError} onSelect={onSelect} />
+        <StudioModel colors={colors} selectedId={selectedId} exportRef={exportRef} onReady={onReady} onError={onError} onSelect={onSelect} />
         <mesh rotation-x={-Math.PI / 2} position={[0, -0.002, 0]} receiveShadow>
           <circleGeometry args={[0.38, 96]} />
           <meshStandardMaterial color="#101018" roughness={0.94} transparent opacity={0.66} />
@@ -440,32 +379,10 @@ function CanvasPanel({ colors, selectedId, pattern, exportRef, action, loading, 
   );
 }
 
-async function patternFromFile(file) {
-  if (!file || !file.type.startsWith("image/")) return null;
-  const sourceUrl = URL.createObjectURL(file);
-  const image = new Image();
-  image.decoding = "async";
-  image.src = sourceUrl;
-  await image.decode();
-  const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-  const normalizedUrl = URL.createObjectURL(blob);
-  const normalizedImage = new Image();
-  normalizedImage.src = normalizedUrl;
-  await normalizedImage.decode();
-  URL.revokeObjectURL(sourceUrl);
-  return { name: file.name, url: normalizedUrl, image: normalizedImage, bytes: new Uint8Array(await blob.arrayBuffer()) };
-}
-
-function ControlRail({ selectedId, colors, tab, setTab, pattern, onColor, onPreset, onRandom, onPattern }) {
+function ControlRail({ selectedId, colors, onColor, onPreset, onRandom }) {
   const selected = PART_BY_ID[selectedId];
   const bambuMatch = closestBambuColor(colors[selectedId]);
   const exactBambu = exactBambuColor(colors[selectedId]);
-  const inputRef = useRef(null);
   const [hexDraft, setHexDraft] = useState(colors[selectedId]);
 
   useEffect(() => setHexDraft(colors[selectedId]), [colors, selectedId]);
@@ -476,29 +393,15 @@ function ControlRail({ selectedId, colors, tab, setTab, pattern, onColor, onPres
     else setHexDraft(colors[selectedId]);
   };
 
-  const handleFile = async (file) => {
-    const next = await patternFromFile(file);
-    if (next) onPattern(next);
-  };
-
   return (
     <Box component="aside" sx={{ ...panelSx, gridArea: "controls", display: { xs: "none", md: "block" }, borderLeft: "1px solid", overflowY: "auto", p: "1.6rem 1.35rem 2.5rem", minWidth: 0 }}>
       <Typography sx={eyebrowSx}>02 / Make it yours</Typography>
-      <Box role="tablist" aria-label="Customization mode" sx={{ mt: "1rem", p: "0.25rem", display: "grid", gridTemplateColumns: "1fr 1fr", background: "#1a1a22", border: "1px solid rgba(255,255,255,0.08)" }}>
-        {[['color', 'Color'], ['pattern', 'Pattern']].map(([id, label]) => (
-          <Box component="button" type="button" role="tab" aria-selected={tab === id} key={id} onClick={() => setTab(id)} sx={{ appearance: "none", border: 0, minHeight: 40, background: tab === id ? CREAM : "transparent", color: tab === id ? COMIC_INK : "rgba(255,255,255,0.5)", fontFamily: ANTON, fontSize: "0.82rem", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}>
-            {label}
-          </Box>
-        ))}
-      </Box>
-
-      <Box sx={{ mt: "1.45rem", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 1 }}>
+      <Box sx={{ mt: "1rem", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 1 }}>
         <Typography component="h2" sx={{ fontFamily: ANTON, fontSize: "1.35rem", textTransform: "uppercase", color: CREAM }}>{selected.label}</Typography>
         <Typography sx={{ ...eyebrowSx, color: ORANGE }}>Selected</Typography>
       </Box>
 
-      {tab === "color" ? (
-        <>
+      <>
           <Box sx={{ mt: "0.9rem", height: 118, position: "relative", display: "flex", alignItems: "flex-end", p: "0.9rem", background: colors[selectedId], border: `3px solid ${COMIC_INK}`, boxShadow: "6px 6px 0 rgba(255,255,255,0.12)", color: new THREE.Color(colors[selectedId]).getHSL({}).l > 0.48 ? COMIC_INK : CREAM }}>
             <Typography sx={{ fontFamily: MONO, fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", background: "rgba(250,248,242,0.78)", color: COMIC_INK, px: "0.45rem", py: "0.25rem" }}>Click to tune ↓</Typography>
             <Box component="input" type="color" aria-label={`Choose ${selected.label} color`} value={colors[selectedId]} onChange={(event) => onColor(event.target.value.toUpperCase())} sx={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
@@ -527,27 +430,7 @@ function ControlRail({ selectedId, colors, tab, setTab, pattern, onColor, onPres
           <Typography sx={{ mt: 0.75, fontFamily: MONO, fontSize: "0.64rem", color: "rgba(255,255,255,0.42)" }}>
             {bambuLabel(bambuMatch)} · {bambuMatch.hex}
           </Typography>
-        </>
-      ) : (
-        <Box sx={{ mt: "1rem" }}>
-          <Box onClick={() => inputRef.current?.click()} sx={{ minHeight: 176, p: "1rem", display: "grid", placeItems: "center", textAlign: "center", border: `2px dashed ${pattern ? ORANGE : "rgba(255,255,255,0.2)"}`, background: pattern ? `center / contain no-repeat url(${pattern.url}) #0b0b10` : "#0b0b10", cursor: "pointer" }}>
-            {!pattern ? (
-              <Box>
-                <Box sx={{ display: "grid", placeItems: "center", width: 44, height: 44, mx: "auto", mb: 1, color: ORANGE, border: `2px solid ${ORANGE}` }}><Icon type="upload" /></Box>
-                <Typography sx={{ fontFamily: ANTON, fontSize: "0.95rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>Upload artwork</Typography>
-                <Typography sx={{ mt: 0.5, fontSize: "0.75rem", lineHeight: 1.5, color: "rgba(255,255,255,0.42)" }}>PNG, JPG or WEBP · max side normalized to 512 px</Typography>
-              </Box>
-            ) : (
-              <Typography sx={{ alignSelf: "end", px: "0.45rem", py: "0.25rem", background: "rgba(8,8,12,0.76)", fontFamily: MONO, fontSize: "0.65rem", color: CREAM }}>{pattern.name}</Typography>
-            )}
-          </Box>
-          <Box component="input" ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => handleFile(event.target.files?.[0])} />
-          <Typography sx={{ mt: 1, fontSize: "0.72rem", lineHeight: 1.5, color: "rgba(255,255,255,0.4)" }}>
-            The artwork is projected onto the selected part and embedded in the exported 3MF.
-          </Typography>
-          {pattern ? <Box component="button" type="button" onClick={() => onPattern(null)} sx={{ mt: 1.2, ...smallButtonSx, width: "100%", background: "transparent", color: CREAM, borderColor: "rgba(255,255,255,0.35)", boxShadow: "none" }}>Remove pattern</Box> : null}
-        </Box>
-      )}
+      </>
 
       <Box sx={{ mt: "1.7rem", pt: "1.35rem", borderTop: "1px solid rgba(255,255,255,0.09)" }}>
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -570,23 +453,14 @@ function ControlRail({ selectedId, colors, tab, setTab, pattern, onColor, onPres
   );
 }
 
-function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor, onPreset, onRandom, pattern, onPattern }) {
+function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor, onPreset, onRandom }) {
   const selected = PART_BY_ID[selectedId];
   const bambuMatch = closestBambuColor(colors[selectedId]);
   const activeGroup = MOBILE_GROUP_BY_ID[mode] ?? MOBILE_GROUPS[0];
-  const inputRef = useRef(null);
   const chooseGroup = (groupId) => {
-    if (groupId === "pattern") {
-      setMode(groupId);
-      return;
-    }
     const group = MOBILE_GROUP_BY_ID[groupId];
     setMode(groupId);
     if (!group.parts.some((part) => part.id === selectedId)) onSelect(group.parts[0].id);
-  };
-  const handleFile = async (file) => {
-    const next = await patternFromFile(file);
-    if (next) onPattern(next);
   };
 
   return (
@@ -618,8 +492,8 @@ function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor
         </Box>
       </Box>
 
-      <Box role="tablist" aria-label="Part categories" sx={{ mx: "0.7rem", p: "3px", display: "grid", gridTemplateColumns: "repeat(5,1fr)", background: "#09090d", border: "1px solid rgba(255,255,255,0.1)" }}>
-        {[...MOBILE_GROUPS.map((group) => [group.id, group.label]), ["pattern", "Art"]].map(([id, label]) => (
+      <Box role="tablist" aria-label="Part categories" sx={{ mx: "0.7rem", p: "3px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", background: "#09090d", border: "1px solid rgba(255,255,255,0.1)" }}>
+        {MOBILE_GROUPS.map(({ id, label }) => (
           <Box component="button" type="button" role="tab" aria-selected={mode === id} key={id} onClick={() => chooseGroup(id)} sx={{ appearance: "none", minWidth: 0, border: 0, background: mode === id ? CREAM : "transparent", color: mode === id ? COMIC_INK : "rgba(255,255,255,0.54)", fontFamily: ANTON, fontSize: "0.68rem", letterSpacing: "0.035em", textTransform: "uppercase", "&:active": { transform: "scale(0.97)" } }}>
             {label}
           </Box>
@@ -627,13 +501,12 @@ function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor
       </Box>
 
       <Box sx={{ minHeight: 0, overflow: "hidden", p: "0.55rem 0.7rem max(0.55rem, env(safe-area-inset-bottom))" }}>
-        {mode !== "pattern" ? (
-          <Box sx={{ height: "100%", display: "grid", gridTemplateRows: "36px minmax(0,1fr) 30px", gap: "0.35rem" }}>
-            <Box sx={{ display: "grid", gridTemplateColumns: `repeat(${activeGroup.parts.length},minmax(0,1fr))`, gap: "0.35rem" }}>
+        <Box sx={{ height: "100%", display: "grid", gridTemplateRows: "38px minmax(0,1fr) 30px", gap: "0.35rem" }}>
+            <Box sx={{ minWidth: 0, display: "flex", gap: "0.35rem", overflowX: "auto", overflowY: "hidden", scrollSnapType: "x proximity", scrollPaddingInline: "0.1rem", overscrollBehaviorX: "contain", WebkitOverflowScrolling: "touch", touchAction: "pan-x", scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } }}>
               {activeGroup.parts.map((part) => {
                 const active = part.id === selectedId;
                 return (
-                  <Box component="button" type="button" key={part.id} aria-pressed={active} onClick={() => onSelect(part.id)} sx={{ appearance: "none", minWidth: 0, p: "0.25rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", border: "1px solid", borderColor: active ? ORANGE : "rgba(255,255,255,0.12)", background: active ? CREAM : "#0b0b10", color: active ? COMIC_INK : CREAM, fontSize: "0.66rem", lineHeight: 1, fontWeight: 750, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", "&:active": { transform: "scale(0.97)" } }}>
+                  <Box component="button" type="button" key={part.id} aria-pressed={active} onClick={() => onSelect(part.id)} sx={{ appearance: "none", flex: activeGroup.parts.length <= 3 ? "1 1 0" : "0 0 118px", minWidth: activeGroup.parts.length <= 3 ? 0 : 118, scrollSnapAlign: "start", p: "0.35rem 0.55rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.38rem", border: "1px solid", borderColor: active ? ORANGE : "rgba(255,255,255,0.12)", background: active ? CREAM : "#0b0b10", color: active ? COMIC_INK : CREAM, fontSize: "0.72rem", lineHeight: 1, fontWeight: 750, whiteSpace: "nowrap", "&:active": { transform: "scale(0.97)" } }}>
                     <Box sx={{ width: 11, height: 11, flex: "0 0 auto", background: colors[part.id], border: "1px solid rgba(128,128,128,0.6)" }} />
                     <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{part.label}</Box>
                   </Box>
@@ -657,23 +530,6 @@ function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor
               <Box component="button" type="button" aria-label="Random colorway" onClick={onRandom} sx={{ appearance: "none", display: "grid", placeItems: "center", border: "1px solid rgba(255,255,255,0.18)", background: "#0b0b10", color: CREAM, "&:active": { transform: "scale(0.95)" } }}><Icon type="shuffle" /></Box>
             </Box>
           </Box>
-        ) : null}
-
-        {mode === "pattern" ? (
-          <Box sx={{ height: "100%", display: "grid", gridTemplateRows: pattern ? "minmax(0,1fr) 36px" : "1fr", gap: "0.5rem" }}>
-            <Box component="button" type="button" onClick={() => inputRef.current?.click()} sx={{ appearance: "none", minHeight: 0, p: "0.75rem", display: "grid", placeItems: "center", border: `2px dashed ${pattern ? ORANGE : "rgba(255,255,255,0.24)"}`, background: pattern ? `center / contain no-repeat url(${pattern.url}) #0b0b10` : "#0b0b10", color: CREAM, textAlign: "center" }}>
-              {!pattern ? (
-                <Box>
-                  <Box sx={{ display: "grid", placeItems: "center", width: 38, height: 38, mx: "auto", mb: 0.65, color: ORANGE, border: `2px solid ${ORANGE}` }}><Icon type="upload" /></Box>
-                  <Typography sx={{ fontFamily: ANTON, fontSize: "0.86rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>Upload artwork</Typography>
-                  <Typography sx={{ mt: 0.3, fontSize: "0.7rem", color: "rgba(255,255,255,0.48)" }}>PNG, JPG or WEBP</Typography>
-                </Box>
-              ) : <Typography sx={{ alignSelf: "end", px: "0.4rem", py: "0.2rem", background: "rgba(8,8,12,0.78)", fontFamily: MONO, fontSize: "0.62rem" }}>{pattern.name}</Typography>}
-            </Box>
-            <Box component="input" ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => handleFile(event.target.files?.[0])} />
-            {pattern ? <Box component="button" type="button" onClick={() => onPattern(null)} sx={{ appearance: "none", border: "1px solid rgba(255,255,255,0.22)", background: "transparent", color: CREAM, fontFamily: MONO, fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase" }}>Remove artwork</Box> : null}
-          </Box>
-        ) : null}
       </Box>
     </Box>
   );
@@ -682,15 +538,13 @@ function MobileStudioDock({ mode, setMode, selectedId, colors, onSelect, onColor
 export default function Customizer() {
   const [colors, setColors] = useState(DEFAULT_COLORS);
   const [selectedId, setSelectedId] = useState("head");
-  const [tab, setTab] = useState("color");
   const [mobileMode, setMobileMode] = useState("head");
-  const [pattern, setPattern] = useState(null);
   const [viewAction, setViewAction] = useState({ seq: 0, type: "home" });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState("");
-  const exportRef = useRef({ root: null, decal: null });
+  const exportRef = useRef({ root: null });
   const ready = useMemo(() => !loading && !loadError, [loading, loadError]);
   const meshColors = useMemo(() => Object.fromEntries(PARTS.flatMap((part) => part.meshes.map((mesh) => [mesh, colors[part.id]]))), [colors]);
 
@@ -714,10 +568,6 @@ export default function Customizer() {
     };
   }, []);
 
-  useEffect(() => () => {
-    if (pattern?.url) URL.revokeObjectURL(pattern.url);
-  }, [pattern]);
-
   const handleModelReady = useCallback(() => setLoading(false), []);
   const handleModelError = useCallback((error) => {
     setLoading(false);
@@ -733,10 +583,6 @@ export default function Customizer() {
     setMobileMode(MOBILE_GROUP_ID_BY_PART[partId] ?? "head");
   }, []);
   const setSelectedColor = (color) => setColors((current) => ({ ...current, [selectedId]: color.toUpperCase() }));
-  const selectPattern = (next) => {
-    if (pattern?.url) URL.revokeObjectURL(pattern.url);
-    setPattern(next);
-  };
 
   const randomize = () => {
     const pool = BAMBU_PLA_BASIC.map((color) => color.hex);
@@ -756,8 +602,6 @@ export default function Customizer() {
     try {
       const bundle = createThreeMfBundle({
         root: exportRef.current.root,
-        decal: exportRef.current.decal,
-        patternBytes: pattern?.bytes,
         selectedPart: PART_BY_ID[selectedId].label,
         meshOrder: PRINT_MESH_ORDER,
       });
@@ -799,9 +643,9 @@ export default function Customizer() {
 
       <Box sx={{ height: { xs: "calc(100dvh - 58px)", md: "calc(100dvh - 66px)" }, display: "grid", gridTemplateAreas: { xs: '"preview" "mobile"', md: '"parts preview controls"' }, gridTemplateColumns: { xs: "1fr", md: "230px minmax(360px,1fr) 300px", xl: "258px minmax(520px,1fr) 348px" }, gridTemplateRows: { xs: "minmax(180px,1fr) clamp(300px,46dvh,340px)", md: "1fr" }, overflow: "hidden", "@media (max-width:899px) and (max-height:600px)": { gridTemplateAreas: '"preview mobile"', gridTemplateColumns: "minmax(0,1fr) minmax(300px,44vw)", gridTemplateRows: "1fr" } }}>
         <PartRail selectedId={selectedId} colors={colors} onSelect={selectPart} />
-        <CanvasPanel colors={colors} selectedId={selectedId} pattern={pattern} exportRef={exportRef} action={viewAction} loading={loading} error={loadError} onReady={handleModelReady} onError={handleModelError} onView={(type) => setViewAction(({ seq }) => ({ seq: seq + 1, type }))} onSelect={selectPart} />
-        <ControlRail selectedId={selectedId} colors={colors} tab={tab} setTab={setTab} pattern={pattern} onColor={setSelectedColor} onPreset={(next) => setColors({ ...next })} onRandom={randomize} onPattern={selectPattern} />
-        <MobileStudioDock mode={mobileMode} setMode={setMobileMode} selectedId={selectedId} colors={colors} onSelect={selectPart} onColor={setSelectedColor} onPreset={(next) => setColors({ ...next })} onRandom={randomize} pattern={pattern} onPattern={selectPattern} />
+        <CanvasPanel colors={colors} selectedId={selectedId} exportRef={exportRef} action={viewAction} loading={loading} error={loadError} onReady={handleModelReady} onError={handleModelError} onView={(type) => setViewAction(({ seq }) => ({ seq: seq + 1, type }))} onSelect={selectPart} />
+        <ControlRail selectedId={selectedId} colors={colors} onColor={setSelectedColor} onPreset={(next) => setColors({ ...next })} onRandom={randomize} />
+        <MobileStudioDock mode={mobileMode} setMode={setMobileMode} selectedId={selectedId} colors={colors} onSelect={selectPart} onColor={setSelectedColor} onPreset={(next) => setColors({ ...next })} onRandom={randomize} />
       </Box>
 
       {notice ? (

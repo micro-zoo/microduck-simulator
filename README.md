@@ -80,11 +80,10 @@ the other three use the same headerless 24-column deployment contract.
 
 The title screen links to a dedicated browser-based Color Studio (`?studio=1`).
 It reuses the simulator's production Microduck geometry and visual language,
-while adding per-part color controls, full-robot colorways, image decals and a
-live orbit preview with direct part picking. Export produces a ZIP containing a
+while adding per-part color controls, full-robot colorways and a live orbit
+preview with direct part picking. Export produces a ZIP containing a
 standards-based complete-assembly `.3mf`, a CSV part manifest, and individually
-numbered `.3mf` files grouped by five-digit Bambu colour code. Uploaded PNG
-textures and projected decal geometry stay with the affected part. The picker
+numbered `.3mf` files grouped by five-digit Bambu colour code. The picker
 includes the 30 Bambu PLA Basic display colours and catalogue colour numbers;
 exact matches are named in the 3MF material table. Designs are saved locally,
 and **Run design**
